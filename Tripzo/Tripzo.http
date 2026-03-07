@@ -1,0 +1,6 @@
+@Tripzo_HostAddress = http://localhost:5136
+
+GET {{Tripzo_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
