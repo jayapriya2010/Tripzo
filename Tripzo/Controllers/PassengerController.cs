@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Tripzo.Models;
 using Tripzo.DTOs.Passenger; // Organized subfolder
 using Tripzo.Repositories;
+using Tripzo.Services;
 
 namespace Tripzo.Controllers
 {
@@ -12,10 +13,17 @@ namespace Tripzo.Controllers
     public class PassengerController : ControllerBase
     {
         private readonly IBookingRepository _bookingRepo;
+        private readonly ITicketPdfService _ticketPdfService;
+        private readonly IEmailService _emailService;
 
-        public PassengerController(IBookingRepository bookingRepo)
+        public PassengerController(
+            IBookingRepository bookingRepo,
+            ITicketPdfService ticketPdfService,
+            IEmailService emailService)
         {
             _bookingRepo = bookingRepo;
+            _ticketPdfService = ticketPdfService;
+            _emailService = emailService;
         }
 
         // 1. Search: Finds routes based on origin, destination, and date
@@ -89,6 +97,18 @@ namespace Tripzo.Controllers
                 if (result == null)
                 {
                     return BadRequest("Booking failed. Please check if seats are available and try again.");
+                }
+
+                // Generate and send ticket email
+                var ticketDetails = await _bookingRepo.GetBookingDetailsForTicketAsync(result.BookingId);
+                if (ticketDetails != null)
+                {
+                    var pdfBytes = _ticketPdfService.GenerateTicketPdf(ticketDetails);
+                    await _emailService.SendTicketEmailAsync(
+                        ticketDetails.PassengerEmail,
+                        ticketDetails.PassengerName,
+                        pdfBytes,
+                        ticketDetails.BookingId);
                 }
 
                 return Ok(new BookingResponseDTO

@@ -228,5 +228,34 @@ namespace Tripzo.Repositories
                 return false;
             }
         }
+
+        // 6. Get booking details for generating ticket PDF and sending email
+        public async Task<TicketDTO?> GetBookingDetailsForTicketAsync(int bookingId)
+        {
+            var booking = await _context.Bookings
+                .Include(b => b.User)
+                .Include(b => b.Route)
+                    .ThenInclude(r => r.Bus)
+                .Include(b => b.BookedSeats)
+                    .ThenInclude(bs => bs.Seat)
+                .FirstOrDefaultAsync(b => b.BookingId == bookingId);
+
+            if (booking == null) return null;
+
+            return new TicketDTO
+            {
+                BookingId = booking.BookingId,
+                PassengerName = booking.User?.FullName ?? "Guest",
+                PassengerEmail = booking.User?.Email ?? "",
+                SourceCity = booking.Route?.SourceCity ?? "",
+                DestCity = booking.Route?.DestCity ?? "",
+                BusName = booking.Route?.Bus?.BusName ?? "",
+                BusNumber = booking.Route?.Bus?.BusNumber ?? "",
+                JourneyDate = booking.JourneyDate,
+                SeatNumbers = booking.BookedSeats?.Select(bs => bs.Seat?.SeatNumber ?? "").ToList() ?? [],
+                TotalAmount = booking.TotalAmount,
+                BookingDate = booking.BookingDate
+            };
+        }
     }
 }

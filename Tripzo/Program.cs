@@ -53,6 +53,8 @@ namespace Tripzo
 
             builder.Services.AddSingleton<PasswordHasher<User>>();
             builder.Services.AddScoped<JwtService>();
+            builder.Services.AddScoped<ITicketPdfService, TicketPdfService>();
+            builder.Services.AddScoped<IEmailService, EmailService>();
 
             var jwtSettings = builder.Configuration.GetSection("Jwt");
             var key = Encoding.UTF8.GetBytes(jwtSettings["Key"]!);

@@ -22,5 +22,8 @@ namespace Tripzo.Repositories
 
         // Cancel a booking (with refund logic placeholder)
         Task<bool> CancelBookingAsync(int bookingId, int userId);
+
+        // Get booking details for generating ticket PDF
+        Task<TicketDTO?> GetBookingDetailsForTicketAsync(int bookingId);
     }
 }
