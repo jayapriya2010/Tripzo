@@ -8,6 +8,8 @@ namespace Tripzo.Repositories
     {
         // User & Role Management
         Task<IEnumerable<User>> GetAllUsersAsync();
+        Task<PagedResultDTO<User>> GetAllUsersAsync(UserFilterDTO filter);
+        Task<UserDetailsDTO?> GetUserByIdAsync(int userId); // Using Stored Procedure
         Task<bool> DeactivateUserAsync(int userId);
         Task<bool> ActivateUserAsync(int userId);
 
@@ -18,7 +20,9 @@ namespace Tripzo.Repositories
 
         // Route Management
         Task<IEnumerable<Tripzo.Models.Route>> GetAllRoutesAsync();
+        Task<PagedResultDTO<Tripzo.Models.Route>> GetAllRoutesAsync(RouteFilterDTO filter);
         Task<Tripzo.Models.Route> GetRouteDetailsAsync(int routeId);
+        Task<RouteDetailsDTO?> GetRouteByIdSpAsync(int routeId); // Using Stored Procedure
 
         // System-Wide Audit
         Task<IEnumerable<Booking>> GetGlobalBookingHistoryAsync();

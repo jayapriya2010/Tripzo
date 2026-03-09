@@ -27,12 +27,13 @@ namespace Tripzo.Controllers
         // var email = User.FindFirst(ClaimTypes.Email)?.Value;
         // var role = User.FindFirst(ClaimTypes.Role)?.Value;
 
-        // 1. Get All Users (For User Management)
+        // 1. Get All Users with Pagination and Filters (For User Management)
         [HttpGet("users")]
-        public async Task<ActionResult<IEnumerable<UserListDTO>>> GetUsers()
+        public async Task<ActionResult<PagedResultDTO<UserListDTO>>> GetUsers([FromQuery] UserFilterDTO filter)
         {
-            var users = await _adminRepo.GetAllUsersAsync();
-            var userDtos = users.Select(u => new UserListDTO
+            var pagedResult = await _adminRepo.GetAllUsersAsync(filter);
+            
+            var userDtos = pagedResult.Items.Select(u => new UserListDTO
             {
                 UserId = u.UserId,
                 FullName = u.FullName,
@@ -40,9 +41,27 @@ namespace Tripzo.Controllers
                 Role = u.Role,
                 Gender = u.Gender,
                 IsActive = u.IsActive
-            });
+            }).ToList();
 
-            return Ok(userDtos);
+            return Ok(new PagedResultDTO<UserListDTO>
+            {
+                Items = userDtos,
+                TotalCount = pagedResult.TotalCount,
+                PageNumber = pagedResult.PageNumber,
+                PageSize = pagedResult.PageSize
+            });
+        }
+
+        // 1.1 Get User Details by ID (Using Stored Procedure)
+        [HttpGet("users/{userId}")]
+        public async Task<ActionResult<UserDetailsDTO>> GetUserById(int userId)
+        {
+            var user = await _adminRepo.GetUserByIdAsync(userId);
+            
+            if (user == null)
+                return NotFound($"User with ID {userId} not found or is an Admin user.");
+
+            return Ok(user);
         }
 
         // 2. Deactivate User Account (Operator or Passenger only)
@@ -106,12 +125,13 @@ namespace Tripzo.Controllers
             return Ok(new { message = "Cancellation rejected. Booking reverted to Confirmed status." });
         }
 
-        // 7. View All Routes
+        // 7. View All Routes with Pagination and Filters
         [HttpGet("routes")]
-        public async Task<ActionResult<IEnumerable<RouteDetailsDTO>>> GetAllRoutes()
+        public async Task<ActionResult<PagedResultDTO<RouteDetailsDTO>>> GetAllRoutes([FromQuery] RouteFilterDTO filter)
         {
-            var routes = await _adminRepo.GetAllRoutesAsync();
-            var routeDtos = routes.Select(r => new RouteDetailsDTO
+            var pagedResult = await _adminRepo.GetAllRoutesAsync(filter);
+
+            var routeDtos = pagedResult.Items.Select(r => new RouteDetailsDTO
             {
                 RouteId = r.RouteId,
                 BusName = r.Bus?.BusName ?? "N/A",
@@ -128,39 +148,27 @@ namespace Tripzo.Controllers
                     StopOrder = s.StopOrder,
                     ArrivalTime = s.ArrivalTime
                 }).OrderBy(s => s.StopOrder).ToList() ?? new List<RouteStopDetailsDTO>()
-            });
+            }).ToList();
 
-            return Ok(routeDtos);
+            return Ok(new PagedResultDTO<RouteDetailsDTO>
+            {
+                Items = routeDtos,
+                TotalCount = pagedResult.TotalCount,
+                PageNumber = pagedResult.PageNumber,
+                PageSize = pagedResult.PageSize
+            });
         }
 
-        // 8. View Route Details by ID
+        // 8. View Route Details by ID (Using Stored Procedure)
         [HttpGet("routes/{routeId}")]
         public async Task<ActionResult<RouteDetailsDTO>> GetRouteDetails(int routeId)
         {
-            var route = await _adminRepo.GetRouteDetailsAsync(routeId);
+            var route = await _adminRepo.GetRouteByIdSpAsync(routeId);
+            
             if (route == null)
-                return NotFound("Route not found.");
+                return NotFound($"Route with ID {routeId} not found.");
 
-            var routeDto = new RouteDetailsDTO
-            {
-                RouteId = route.RouteId,
-                BusName = route.Bus?.BusName ?? "N/A",
-                BusNumber = route.Bus?.BusNumber ?? "N/A",
-                SourceCity = route.SourceCity,
-                DestCity = route.DestCity,
-                BaseFare = route.BaseFare,
-                Stops = route.RouteStops?.Select(s => new RouteStopDetailsDTO
-                {
-                    StopId = s.StopId,
-                    CityName = s.CityName,
-                    LocationName = s.LocationName,
-                    StopType = s.StopType,
-                    StopOrder = s.StopOrder,
-                    ArrivalTime = s.ArrivalTime
-                }).OrderBy(s => s.StopOrder).ToList() ?? new List<RouteStopDetailsDTO>()
-            };
-
-            return Ok(routeDto);
+            return Ok(route);
         }
 
         // 9. Global Booking Audit List
