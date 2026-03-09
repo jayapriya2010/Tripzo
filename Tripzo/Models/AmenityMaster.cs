@@ -9,7 +9,5 @@ namespace Tripzo.Models
         [Required]
         [StringLength(100)]
         public string AmenityName { get; set; }
-
-        public virtual ICollection<BusAmenity> BusAmenities { get; set; }
     }
 }

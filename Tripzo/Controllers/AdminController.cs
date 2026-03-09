@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Tripzo.DTO.Admin;
 using Tripzo.DTOs.Admin;
 using Tripzo.Models;
@@ -10,7 +12,7 @@ namespace Tripzo.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    // [Authorize(Roles = "Admin")] // Uncomment this after adding JWT Authentication
+    [Authorize(Roles = "Admin")]
     public class AdminController : ControllerBase
     {
         private readonly IAdminRepository _adminRepo;
@@ -19,6 +21,11 @@ namespace Tripzo.Controllers
         {
             _adminRepo = adminRepo;
         }
+
+        // Example: Retrieve authenticated user info from JWT claims
+        // var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        // var email = User.FindFirst(ClaimTypes.Email)?.Value;
+        // var role = User.FindFirst(ClaimTypes.Role)?.Value;
 
         // 1. Get All Users (For User Management)
         [HttpGet("users")]

@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Tripzo.Models;
 using Tripzo.DTOs.Passenger; // Organized subfolder
 using Tripzo.Repositories;
@@ -7,7 +8,7 @@ namespace Tripzo.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    // [Authorize(Roles = "Passenger")] // Suggested for secure booking
+    [Authorize(Roles = "Passenger")]
     public class PassengerController : ControllerBase
     {
         private readonly IBookingRepository _bookingRepo;
@@ -28,12 +29,18 @@ namespace Tripzo.Controllers
             var routes = await _bookingRepo.SearchRoutesAsync(search.FromCity, search.ToCity, search.TravelDate);
 
             var results = new List<BusSearchResultDTO>();
-            
+
             foreach (var r in routes)
             {
                 // Calculate available seats for this route on the travel date
                 var availableSeats = await _bookingRepo.GetAvailableSeatsCountAsync(r.BusId, r.RouteId, search.TravelDate);
-                
+
+                // Get actual amenities from the database
+                var amenities = r.Bus?.BusAmenities?
+                    .Where(ba => ba.Amenity != null)
+                    .Select(ba => ba.Amenity.AmenityName)
+                    .ToList() ?? new List<string>();
+
                 results.Add(new BusSearchResultDTO
                 {
                     RouteId = r.RouteId,
@@ -41,7 +48,7 @@ namespace Tripzo.Controllers
                     BusType = r.Bus?.BusType,
                     DepartureTime = r.RouteStops.FirstOrDefault(s => s.StopOrder == 1)?.ArrivalTime ?? TimeSpan.Zero,
                     Fare = r.BaseFare,
-                    Amenities = new List<string> { "Water Bottle", "Charging Point", "Blanket" },
+                    Amenities = amenities,
                     AvailableSeats = availableSeats
                 });
             }
@@ -100,8 +107,8 @@ namespace Tripzo.Controllers
             catch (Exception ex)
             {
                 // Log and return detailed error for debugging
-                var errorMessage = ex.InnerException != null 
-                    ? $"{ex.Message} - Inner: {ex.InnerException.Message}" 
+                var errorMessage = ex.InnerException != null
+                    ? $"{ex.Message} - Inner: {ex.InnerException.Message}"
                     : ex.Message;
                 return BadRequest(errorMessage);
             }

@@ -86,6 +86,9 @@ namespace Tripzo.Data
                 entity.HasOne(ba => ba.Amenity)
                       .WithMany()
                       .HasForeignKey(ba => ba.AmenityId);
+
+                // Ignore any shadow properties
+                entity.Ignore("AmenityMasterAmenityId");
             });
         }
 

@@ -1,6 +1,8 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Tripzo.Models;
 using Tripzo.DTOs.Operator;
+using Tripzo.DTO.Admin;
 using Tripzo.Repositories;
 using AutoMapper;
 
@@ -8,7 +10,7 @@ namespace Tripzo.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    // [Authorize(Roles = "Operator")] // Uncomment this for production security
+    [Authorize(Roles = "Operator")]
     public class OperatorController : ControllerBase
     {
         private readonly IFleetRepository _fleetRepo;
@@ -53,7 +55,55 @@ namespace Tripzo.Controllers
             return Ok(new { message = "Seat layout configured successfully." });
         }
 
-        // 4. Route Configuration: Create Route and multiple stops together
+        // 4. Amenity Management: Get all available amenities
+        [HttpGet("amenities")]
+        public async Task<ActionResult<IEnumerable<AmenityDTO>>> GetAllAmenities()
+        {
+            var amenities = await _fleetRepo.GetAllAmenitiesAsync();
+            var amenityDtos = amenities.Select(a => new AmenityDTO
+            {
+                AmenityId = a.AmenityId,
+                AmenityName = a.AmenityName
+            });
+
+            return Ok(amenityDtos);
+        }
+
+        // 5. Amenity Management: Get amenities for a specific bus
+        [HttpGet("buses/{busId}/amenities")]
+        public async Task<ActionResult<IEnumerable<AmenityDTO>>> GetBusAmenities(int busId)
+        {
+            var amenities = await _fleetRepo.GetBusAmenitiesAsync(busId);
+            var amenityDtos = amenities.Select(a => new AmenityDTO
+            {
+                AmenityId = a.AmenityId,
+                AmenityName = a.AmenityName
+            });
+
+            return Ok(amenityDtos);
+        }
+
+        // 6. Amenity Management: Add amenities to a bus
+        [HttpPost("buses/{busId}/amenities")]
+        public async Task<IActionResult> AddAmenitiesToBus(int busId, [FromBody] List<int> amenityIds)
+        {
+            var result = await _fleetRepo.AddAmenitiesToBusAsync(busId, amenityIds);
+            if (!result) return BadRequest("Failed to add amenities to bus. Check if bus exists.");
+
+            return Ok(new { message = "Amenities added to bus successfully." });
+        }
+
+        // 7. Amenity Management: Remove amenities from a bus
+        [HttpDelete("buses/{busId}/amenities")]
+        public async Task<IActionResult> RemoveAmenitiesFromBus(int busId, [FromBody] List<int> amenityIds)
+        {
+            var result = await _fleetRepo.RemoveAmenitiesFromBusAsync(busId, amenityIds);
+            if (!result) return BadRequest("Failed to remove amenities from bus.");
+
+            return Ok(new { message = "Amenities removed from bus successfully." });
+        }
+
+        // 8. Route Configuration: Create Route and multiple stops together
         [HttpPost("routes")]
         public async Task<IActionResult> CreateRoute([FromBody] RouteCreateDTO dto)
         {
@@ -67,7 +117,7 @@ namespace Tripzo.Controllers
             return Ok(new { message = "Route and stops created successfully." });
         }
 
-        // 5. Refund Management: Process refunds for cancelled tickets
+        // 9. Refund Management: Process refunds for cancelled tickets
         [HttpPost("refund")]
         public async Task<IActionResult> ProcessRefund([FromBody] RefundRequestDTO dto)
         {
@@ -78,7 +128,7 @@ namespace Tripzo.Controllers
             return Ok(new { message = "Refund processed successfully." });
         }
 
-        // 5.5. View Approved Cancellations for Refund Processing
+        // 10. View Approved Cancellations for Refund Processing
         [HttpGet("approved-cancellations/{operatorId}")]
         public async Task<ActionResult<IEnumerable<ApprovedCancellationDTO>>> GetApprovedCancellations(int operatorId)
         {
@@ -97,7 +147,7 @@ namespace Tripzo.Controllers
             return Ok(dtos);
         }
 
-        // 6. Fleet View: List all buses belonging to the operator
+        // 11. Fleet View: List all buses belonging to the operator
         [HttpGet("fleet/{operatorId}")]
         public async Task<ActionResult<IEnumerable<BusDTO>>> GetFleet(int operatorId)
         {
@@ -107,7 +157,7 @@ namespace Tripzo.Controllers
             return Ok(fleetDtos);
         }
 
-        // 7. Status Management: Toggle Bus (Soft Delete)
+        // 12. Status Management: Toggle Bus (Soft Delete)
         [HttpPatch("buses/{busId}/status")]
         public async Task<IActionResult> ToggleBusStatus(int busId, [FromQuery] bool isActive)
         {
@@ -121,7 +171,7 @@ namespace Tripzo.Controllers
         public async Task<ActionResult<List<ScheduleResponseDTO>>> ScheduleBus([FromBody] ScheduleBusDTO dto)
         {
             var schedules = await _fleetRepo.CreateBusSchedulesAsync(dto.RouteId, dto.BusId, dto.ScheduledDates);
-            
+
             var response = schedules.Select(s => new ScheduleResponseDTO
             {
                 ScheduleId = s.ScheduleId,
@@ -138,7 +188,7 @@ namespace Tripzo.Controllers
         public async Task<ActionResult<List<ScheduleResponseDTO>>> GetSchedules(int operatorId)
         {
             var schedules = await _fleetRepo.GetSchedulesByOperatorAsync(operatorId);
-            
+
             var response = schedules.Select(s => new ScheduleResponseDTO
             {
                 ScheduleId = s.ScheduleId,

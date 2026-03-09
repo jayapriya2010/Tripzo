@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Tripzo.Models;
 using Tripzo.DTOs;
 using Tripzo.Data;
@@ -13,12 +15,15 @@ namespace Tripzo.Controllers
     public class UserController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly PasswordHasher<User> _passwordHasher;
 
-        public UserController(AppDbContext context)
+        public UserController(AppDbContext context, PasswordHasher<User> passwordHasher)
         {
             _context = context;
+            _passwordHasher = passwordHasher;
         }
 
+        [AllowAnonymous]
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] UserRegisterDTO dto)
         {
@@ -37,10 +42,12 @@ namespace Tripzo.Controllers
             {
                 FullName = dto.FullName,
                 Email = dto.Email,
-                PasswordHash = dto.Password,
                 Role = dto.Role,
                 Gender = dto.Gender
             };
+
+            // Hash the password before storing in the database
+            user.PasswordHash = _passwordHasher.HashPassword(user, dto.Password);
 
             _context.Users.Add(user);
             await _context.SaveChangesAsync();

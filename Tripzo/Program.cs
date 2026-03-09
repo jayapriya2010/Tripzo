@@ -1,9 +1,14 @@
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
 using Tripzo.Data;
+using Tripzo.Models;
 using Tripzo.Repositories;
-using AutoMapper;
+using Tripzo.Services;
 using Tripzo.Mapping;
-
 
 namespace Tripzo
 {
@@ -13,47 +18,77 @@ namespace Tripzo
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            // Add services to the container.
-
             builder.Services.AddControllers();
-            // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-            builder.Services.AddEndpointsApiExplorer();
-            builder.Services.AddSwaggerGen();
+            builder.Services.AddExceptionHandler<Tripzo.Middleware.GlobalExceptionHandler>();
+            builder.Services.AddProblemDetails();
+            builder.Services.AddAutoMapper(typeof(AutoMapperProfiles));
+
+            builder.Services.AddSwaggerGen(options =>
+            {
+                options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+                {
+                    Name = "Authorization",
+                    Type = SecuritySchemeType.ApiKey,
+                    Scheme = "Bearer",
+                    BearerFormat = "JWT",
+                    In = ParameterLocation.Header,
+                    Description = "Enter: Bearer {your JWT token}"
+                });
+
+                options.AddSecurityRequirement(_ => new OpenApiSecurityRequirement
+                {
+                    {
+                        new OpenApiSecuritySchemeReference("Bearer"),
+                        new List<string>()
+                    }
+                });
+            });
 
             builder.Services.AddDbContext<AppDbContext>(options =>
                 options.UseSqlServer(builder.Configuration.GetConnectionString("constr")));
-            
 
             builder.Services.AddScoped<IBookingRepository, BookingRepository>();
             builder.Services.AddScoped<IFleetRepository, FleetRepository>();
             builder.Services.AddScoped<IAdminRepository, AdminRepository>();
 
-            // AutoMapper registration
-            builder.Services.AddAutoMapper(typeof(AutoMapperProfiles));
+            builder.Services.AddSingleton<PasswordHasher<User>>();
+            builder.Services.AddScoped<JwtService>();
 
-            // Register Global Exception Handler
-            builder.Services.AddExceptionHandler<Tripzo.Middleware.GlobalExceptionHandler>();
-            builder.Services.AddProblemDetails();
+            var jwtSettings = builder.Configuration.GetSection("Jwt");
+            var key = Encoding.UTF8.GetBytes(jwtSettings["Key"]!);
 
-            
-  
+            builder.Services.AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            })
+            .AddJwtBearer(options =>
+            {
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidateAudience = true,
+                    ValidateLifetime = true,
+                    ValidateIssuerSigningKey = true,
+                    ValidIssuer = jwtSettings["Issuer"],
+                    ValidAudience = jwtSettings["Audience"],
+                    IssuerSigningKey = new SymmetricSecurityKey(key)
+                };
+            });
 
             var app = builder.Build();
 
-            // Configure the HTTP request pipeline.
             if (app.Environment.IsDevelopment())
             {
                 app.UseSwagger();
                 app.UseSwaggerUI();
             }
 
-            // Global exception handler should be one of the first middlewares
             app.UseExceptionHandler();
-
             app.UseHttpsRedirection();
 
+            app.UseAuthentication();
             app.UseAuthorization();
-
 
             app.MapControllers();
 

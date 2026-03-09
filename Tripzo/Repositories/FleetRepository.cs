@@ -21,11 +21,13 @@ namespace Tripzo.Repositories
             return await _context.SaveChangesAsync() > 0;
         }
 
-        // 2. Fetch all buses for a specific Operator
+        // 2. Fetch all buses for a specific Operator (including amenities)
         public async Task<IEnumerable<Bus>> GetOperatorFleetAsync(int operatorId)
         {
             return await _context.Buses
                 .Include(b => b.SeatConfigs)
+                .Include(b => b.BusAmenities)
+                    .ThenInclude(ba => ba.Amenity)
                 .Where(b => b.OperatorId == operatorId)
                 .ToListAsync();
         }
@@ -40,7 +42,69 @@ namespace Tripzo.Repositories
             return await _context.SaveChangesAsync() > 0;
         }
 
-        // 4. Define the physical seat map for a bus
+        // 4. Add amenities to a bus
+        public async Task<bool> AddAmenitiesToBusAsync(int busId, List<int> amenityIds)
+        {
+            var bus = await _context.Buses.FindAsync(busId);
+            if (bus == null) return false;
+
+            // Get existing amenity IDs for this bus
+            var existingAmenityIds = await _context.BusAmenities
+                .Where(ba => ba.BusId == busId)
+                .Select(ba => ba.AmenityId)
+                .ToListAsync();
+
+            // Only add amenities that don't already exist
+            var newAmenities = amenityIds
+                .Where(id => !existingAmenityIds.Contains(id))
+                .Select(amenityId => new BusAmenity
+                {
+                    BusId = busId,
+                    AmenityId = amenityId
+                }).ToList();
+
+            if (newAmenities.Any())
+            {
+                _context.BusAmenities.AddRange(newAmenities);
+                return await _context.SaveChangesAsync() > 0;
+            }
+
+            return true; // No new amenities to add, but not a failure
+        }
+
+        // 5. Remove amenities from a bus
+        public async Task<bool> RemoveAmenitiesFromBusAsync(int busId, List<int> amenityIds)
+        {
+            var amenitiesToRemove = await _context.BusAmenities
+                .Where(ba => ba.BusId == busId && amenityIds.Contains(ba.AmenityId))
+                .ToListAsync();
+
+            if (amenitiesToRemove.Any())
+            {
+                _context.BusAmenities.RemoveRange(amenitiesToRemove);
+                return await _context.SaveChangesAsync() > 0;
+            }
+
+            return true;
+        }
+
+        // 6. Get all available amenities
+        public async Task<IEnumerable<AmenityMaster>> GetAllAmenitiesAsync()
+        {
+            return await _context.Amenities.ToListAsync();
+        }
+
+        // 7. Get amenities for a specific bus
+        public async Task<IEnumerable<AmenityMaster>> GetBusAmenitiesAsync(int busId)
+        {
+            return await _context.BusAmenities
+                .Where(ba => ba.BusId == busId)
+                .Include(ba => ba.Amenity)
+                .Select(ba => ba.Amenity)
+                .ToListAsync();
+        }
+
+        // 8. Define the physical seat map for a bus
         public async Task<bool> ConfigureBusSeatsAsync(int busId, List<SeatConfig> seats)
         {
             // Validate bus exists
@@ -67,7 +131,7 @@ namespace Tripzo.Repositories
             return await _context.SaveChangesAsync() > 0;
         }
 
-        // 5. Create a Route and its Stops in one transaction
+        // 9. Create a Route and its Stops in one transaction
         public async Task<bool> DefineRouteWithStopsAsync(Tripzo.Models.Route route, List<RouteStop> stops)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
@@ -95,7 +159,7 @@ namespace Tripzo.Repositories
             }
         }
 
-        // 6. View all routes currently assigned to a bus
+        // 10. View all routes currently assigned to a bus
         public async Task<IEnumerable<Tripzo.Models.Route>> GetBusRoutesAsync(int busId)
         {
             return await _context.Routes
@@ -104,7 +168,7 @@ namespace Tripzo.Repositories
                 .ToListAsync();
         }
 
-        // 6.5. Get approved cancellations for operator's buses
+        // 11. Get approved cancellations for operator's buses
         public async Task<IEnumerable<Booking>> GetApprovedCancellationsForOperatorAsync(int operatorId)
         {
             return await _context.Bookings
@@ -116,8 +180,7 @@ namespace Tripzo.Repositories
                 .ToListAsync();
         }
 
-        // 7. Process a refund for a cancelled booking (Admin Function)
-        
+        // 12. Process a refund for a cancelled booking
         public async Task<bool> ProcessRefundAsync(int bookingId, decimal amount)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
@@ -148,13 +211,12 @@ namespace Tripzo.Repositories
             }
             catch (Exception ex)
             {
-                // Log the error using the Admin's error logging system if possible
                 await transaction.RollbackAsync();
                 return false;
             }
         }
 
-        // 8. Dashboard stats for Operator overview
+        // 13. Dashboard stats for Operator overview
         public async Task<OperatorDashboardDTO> GetOperatorDashboardAsync(int operatorId)
         {
             var buses = _context.Buses.Where(b => b.OperatorId == operatorId);
@@ -168,7 +230,7 @@ namespace Tripzo.Repositories
                     buses.Any(bus => bus.BusId == b.Route.BusId)),
                 RevenueThisMonth = await _context.Payments
                     .Where(p => p.PaymentDate.Month == DateTime.Now.Month &&
-                                buses.Any(bus => bus.BusId == bus.BusId)) // Simplified logic
+                                buses.Any(bus => bus.BusId == bus.BusId))
                     .SumAsync(p => p.AmountPaid)
             };
         }
@@ -179,7 +241,6 @@ namespace Tripzo.Repositories
             
             foreach (var date in dates)
             {
-                // Check if schedule already exists
                 var exists = await _context.BusSchedules
                     .AnyAsync(bs => bs.RouteId == routeId && 
                            bs.BusId == busId && 
@@ -201,6 +262,14 @@ namespace Tripzo.Repositories
             {
                 await _context.BusSchedules.AddRangeAsync(schedules);
                 await _context.SaveChangesAsync();
+
+                // Reload with navigation properties
+                var scheduleIds = schedules.Select(s => s.ScheduleId).ToList();
+                schedules = await _context.BusSchedules
+                    .Include(bs => bs.Route)
+                    .Include(bs => bs.Bus)
+                    .Where(bs => scheduleIds.Contains(bs.ScheduleId))
+                    .ToListAsync();
             }
 
             return schedules;

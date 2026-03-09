@@ -16,10 +16,12 @@ namespace Tripzo.Repositories
             _context = context;
         }
 
-        // 1. Fetch all registered users (Admins, Operators, Passengers)
+        // 1. Fetch all registered users (Operators and Passengers only - excludes Admin)
         public async Task<IEnumerable<User>> GetAllUsersAsync()
         {
-            return await _context.Users.ToListAsync();
+            return await _context.Users
+                .Where(u => u.Role != "Admin")
+                .ToListAsync();
         }
 
         // Deactivate user account (soft delete)

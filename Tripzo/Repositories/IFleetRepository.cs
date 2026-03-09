@@ -10,6 +10,12 @@ namespace Tripzo.Repositories
         Task<IEnumerable<Bus>> GetOperatorFleetAsync(int operatorId);
         Task<bool> UpdateBusStatusAsync(int busId, bool status);
 
+        // Amenity Management
+        Task<bool> AddAmenitiesToBusAsync(int busId, List<int> amenityIds);
+        Task<bool> RemoveAmenitiesFromBusAsync(int busId, List<int> amenityIds);
+        Task<IEnumerable<AmenityMaster>> GetAllAmenitiesAsync();
+        Task<IEnumerable<AmenityMaster>> GetBusAmenitiesAsync(int busId);
+
         // Seat Layout Management
         Task<bool> ConfigureBusSeatsAsync(int busId, List<SeatConfig> seats);
 

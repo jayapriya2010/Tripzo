@@ -15,11 +15,13 @@ namespace Tripzo.Repositories
             _context = context;
         }
 
-        // 1. Search for Routes: Includes oBus and Stops, ensuring the Bus is Active
+        // 1. Search for Routes: Includes Bus, BusAmenities and Stops, ensuring the Bus is Active
         public async Task<List<Tripzo.Models.Route>> SearchRoutesAsync(string fromCity, string toCity, DateTime travelDate)
         {
             return await _context.Routes
                 .Include(r => r.Bus)
+                    .ThenInclude(b => b.BusAmenities)
+                        .ThenInclude(ba => ba.Amenity)
                 .Include(r => r.RouteStops)
                 .Where(r => r.SourceCity.ToLower() == fromCity.ToLower() &&
                            r.DestCity.ToLower() == toCity.ToLower() &&
