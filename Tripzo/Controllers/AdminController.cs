@@ -56,10 +56,22 @@ namespace Tripzo.Controllers
         [HttpGet("users/{userId}")]
         public async Task<ActionResult<UserDetailsDTO>> GetUserById(int userId)
         {
+            if (userId <= 0)
+                return BadRequest(new { message = "User ID must be a positive number." });
+
+            // First check if user exists and get their role
+            var (exists, role) = await _adminRepo.CheckUserExistsAsync(userId);
+
+            if (!exists)
+                return NotFound(new { message = $"User with ID {userId} not found." });
+
+            if (role == "Admin")
+                return BadRequest(new { message = "Cannot view Admin user details through this endpoint." });
+
             var user = await _adminRepo.GetUserByIdAsync(userId);
-            
+
             if (user == null)
-                return NotFound($"User with ID {userId} not found or is an Admin user.");
+                return NotFound(new { message = $"User with ID {userId} not found." });
 
             return Ok(user);
         }
@@ -68,8 +80,19 @@ namespace Tripzo.Controllers
         [HttpPut("deactivate-user/{userId}")]
         public async Task<IActionResult> DeactivateUser(int userId)
         {
+            if (userId <= 0)
+                return BadRequest(new { message = "User ID must be a positive number." });
+
+            var (exists, role) = await _adminRepo.CheckUserExistsAsync(userId);
+
+            if (!exists)
+                return NotFound(new { message = $"User with ID {userId} not found." });
+
+            if (role == "Admin")
+                return BadRequest(new { message = "Cannot deactivate Admin users." });
+
             var result = await _adminRepo.DeactivateUserAsync(userId);
-            if (!result) return NotFound("User not found or cannot be deactivated.");
+            if (!result) return BadRequest(new { message = "User cannot be deactivated. Only Operator or Passenger accounts can be deactivated." });
 
             return Ok(new { message = "User account deactivated successfully." });
         }
@@ -78,8 +101,19 @@ namespace Tripzo.Controllers
         [HttpPut("activate-user/{userId}")]
         public async Task<IActionResult> ActivateUser(int userId)
         {
+            if (userId <= 0)
+                return BadRequest(new { message = "User ID must be a positive number." });
+
+            var (exists, role) = await _adminRepo.CheckUserExistsAsync(userId);
+
+            if (!exists)
+                return NotFound(new { message = $"User with ID {userId} not found." });
+
+            if (role == "Admin")
+                return BadRequest(new { message = "Cannot activate Admin users through this endpoint." });
+
             var result = await _adminRepo.ActivateUserAsync(userId);
-            if (!result) return NotFound("User not found or cannot be activated.");
+            if (!result) return BadRequest(new { message = "User cannot be activated. Only Operator or Passenger accounts can be activated." });
 
             return Ok(new { message = "User account activated successfully." });
         }
@@ -109,8 +143,11 @@ namespace Tripzo.Controllers
         [HttpPut("approve-cancellation/{bookingId}")]
         public async Task<IActionResult> ApproveCancellation(int bookingId)
         {
+            if (bookingId <= 0)
+                return BadRequest(new { message = "Booking ID must be a positive number." });
+
             var result = await _adminRepo.ApproveCancellationAsync(bookingId);
-            if (!result) return NotFound("Booking not found or cannot be approved.");
+            if (!result) return NotFound(new { message = $"Booking with ID {bookingId} not found or is not in a cancellable state." });
 
             return Ok(new { message = "Cancellation approved. Operator can now process the refund." });
         }
@@ -119,8 +156,11 @@ namespace Tripzo.Controllers
         [HttpPut("reject-cancellation/{bookingId}")]
         public async Task<IActionResult> RejectCancellation(int bookingId)
         {
+            if (bookingId <= 0)
+                return BadRequest(new { message = "Booking ID must be a positive number." });
+
             var result = await _adminRepo.RejectCancellationAsync(bookingId);
-            if (!result) return NotFound("Booking not found or cannot be rejected.");
+            if (!result) return NotFound(new { message = $"Booking with ID {bookingId} not found or cannot be rejected." });
 
             return Ok(new { message = "Cancellation rejected. Booking reverted to Confirmed status." });
         }
@@ -163,10 +203,13 @@ namespace Tripzo.Controllers
         [HttpGet("routes/{routeId}")]
         public async Task<ActionResult<RouteDetailsDTO>> GetRouteDetails(int routeId)
         {
+            if (routeId <= 0)
+                return BadRequest(new { message = "Route ID must be a positive number." });
+
             var route = await _adminRepo.GetRouteByIdSpAsync(routeId);
-            
+
             if (route == null)
-                return NotFound($"Route with ID {routeId} not found.");
+                return NotFound(new { message = $"Route with ID {routeId} not found." });
 
             return Ok(route);
         }
@@ -201,28 +244,28 @@ namespace Tripzo.Controllers
         }
 
         // 11. System Health: View Error Logs
-        [HttpGet("logs")]
-        public async Task<ActionResult<IEnumerable<ErrorLogDTO>>> GetLogs()
-        {
-            var logs = await _adminRepo.GetSystemErrorLogsAsync();
-            var logDtos = logs.Select(l => new ErrorLogDTO
-            {
-                LogId = l.LogId,
-                Message = l.Message,
-                Source = l.Source,
-                Timestamp = l.Timestamp
-            });
+        // [HttpGet("logs")]
+        // public async Task<ActionResult<IEnumerable<ErrorLogDTO>>> GetLogs()
+        // {
+        //     var logs = await _adminRepo.GetSystemErrorLogsAsync();
+        //     var logDtos = logs.Select(l => new ErrorLogDTO
+        //     {
+        //         LogId = l.LogId,
+        //         Message = l.Message,
+        //         Source = l.Source,
+        //         Timestamp = l.Timestamp
+        //     });
 
-            return Ok(logDtos);
-        }
+        //     return Ok(logDtos);
+        // }
 
         // 12. Maintenance: Clear old logs
-        [HttpDelete("logs/clear")]
-        public async Task<IActionResult> ClearLogs([FromQuery] DateTime beforeDate)
-        {
-            var result = await _adminRepo.ClearOldLogsAsync(beforeDate);
-            return Ok(new { message = "Old logs cleared successfully." });
-        }
+        // [HttpDelete("logs/clear")]
+        // public async Task<IActionResult> ClearLogs([FromQuery] DateTime beforeDate)
+        // {
+        //     var result = await _adminRepo.ClearOldLogsAsync(beforeDate);
+        //     return Ok(new { message = "Old logs cleared successfully." });
+        // }
 
         [HttpGet("dashboard")]
         public async Task<ActionResult<AdminDashboardDTO>> GetDashboard()

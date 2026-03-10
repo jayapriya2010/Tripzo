@@ -17,7 +17,7 @@ namespace Tripzo.Repositories
         Task<IEnumerable<AmenityMaster>> GetBusAmenitiesAsync(int busId);
 
         // Seat Layout Management
-        Task<bool> ConfigureBusSeatsAsync(int busId, List<SeatConfig> seats);
+        Task<SeatConfigResult> ConfigureBusSeatsAsync(int busId, List<SeatConfig> seats);
 
         // Route & Schedule Management
         Task<bool> DefineRouteWithStopsAsync(Tripzo.Models.Route route, List<RouteStop> stops);

@@ -10,6 +10,7 @@ namespace Tripzo.Repositories
         Task<IEnumerable<User>> GetAllUsersAsync();
         Task<PagedResultDTO<User>> GetAllUsersAsync(UserFilterDTO filter);
         Task<UserDetailsDTO?> GetUserByIdAsync(int userId); // Using Stored Procedure
+        Task<(bool exists, string? role)> CheckUserExistsAsync(int userId);
         Task<bool> DeactivateUserAsync(int userId);
         Task<bool> ActivateUserAsync(int userId);
 

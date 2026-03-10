@@ -94,6 +94,17 @@ namespace Tripzo.Repositories
             return result.FirstOrDefault();
         }
 
+        // Check if user exists and get their role
+        public async Task<(bool exists, string? role)> CheckUserExistsAsync(int userId)
+        {
+            var user = await _context.Users
+                .Where(u => u.UserId == userId)
+                .Select(u => new { u.UserId, u.Role })
+                .FirstOrDefaultAsync();
+
+            return user == null ? (false, null) : (true, user.Role);
+        }
+
         // Deactivate user account (soft delete)
         public async Task<bool> DeactivateUserAsync(int userId)
         {

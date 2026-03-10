@@ -30,11 +30,19 @@ namespace Tripzo.Controllers
         [HttpGet("search")]
         public async Task<ActionResult<IEnumerable<BusSearchResultDTO>>> SearchBuses([FromQuery] SearchBusDTO search)
         {
-            // Requirement: Date must be from today and should be validated
+            // Validate: Date must be from today onwards
             if (search.TravelDate.Date < DateTime.Today)
-                return BadRequest("Travel date cannot be in the past.");
+                return BadRequest(new { message = "Travel date cannot be in the past." });
+
+            // Validate: FromCity and ToCity cannot be the same
+            if (search.FromCity.Equals(search.ToCity, StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { message = "Source and destination cities cannot be the same." });
 
             var routes = await _bookingRepo.SearchRoutesAsync(search.FromCity, search.ToCity, search.TravelDate);
+
+            // Return 404 if no routes found
+            if (routes == null || routes.Count == 0)
+                return NotFound(new { message = $"No buses found from {search.FromCity} to {search.ToCity} on {search.TravelDate:yyyy-MM-dd}." });
 
             var results = new List<BusSearchResultDTO>();
 
@@ -68,8 +76,24 @@ namespace Tripzo.Controllers
         [HttpGet("seats")]
         public async Task<ActionResult<List<SeatLayoutDTO>>> GetSeatMap(int busId, int routeId, DateTime travelDate)
         {
+            // Validate: IDs must be positive
+            if (busId <= 0)
+                return BadRequest(new { message = "Bus ID must be a positive number." });
+
+            if (routeId <= 0)
+                return BadRequest(new { message = "Route ID must be a positive number." });
+
+            // Validate: Date must be from today onwards
+            if (travelDate.Date < DateTime.Today)
+                return BadRequest(new { message = "Travel date cannot be in the past." });
+
             // Consolidates physical layout and occupied status for 'Cross Mark' UI
             var layout = await _bookingRepo.GetSeatLayoutAsync(busId, routeId, travelDate);
+
+            // Return 404 if no seats found (invalid bus)
+            if (layout == null || layout.Count == 0)
+                return NotFound(new { message = $"No seat configuration found for Bus ID {busId}." });
+
             return Ok(layout);
         }
 
@@ -77,6 +101,14 @@ namespace Tripzo.Controllers
         [HttpPost("book")]
         public async Task<ActionResult<BookingResponseDTO>> CreateReservation([FromBody] BookingRequestDTO request)
         {
+            // Validate: Journey date must be from today onwards
+            if (request.JourneyDate.Date < DateTime.Today)
+                return BadRequest(new { message = "Journey date cannot be in the past." });
+
+            // Validate: Boarding and dropping stops cannot be the same
+            if (request.BoardingStopId == request.DroppingStopId)
+                return BadRequest(new { message = "Boarding and dropping stops cannot be the same." });
+
             try
             {
                 var booking = new Booking
@@ -96,7 +128,7 @@ namespace Tripzo.Controllers
 
                 if (result == null)
                 {
-                    return BadRequest("Booking failed. Please check if seats are available and try again.");
+                    return BadRequest(new { message = "Booking failed. Please check if seats are available and try again." });
                 }
 
                 // Generate and send ticket email
@@ -122,7 +154,7 @@ namespace Tripzo.Controllers
             catch (ApplicationException ex)
             {
                 // Business logic exceptions with user-friendly messages
-                return BadRequest(ex.Message);
+                return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -130,7 +162,7 @@ namespace Tripzo.Controllers
                 var errorMessage = ex.InnerException != null
                     ? $"{ex.Message} - Inner: {ex.InnerException.Message}"
                     : ex.Message;
-                return BadRequest(errorMessage);
+                return BadRequest(new { message = errorMessage });
             }
         }
 
@@ -138,7 +170,16 @@ namespace Tripzo.Controllers
         [HttpGet("history/{userId}")]
         public async Task<ActionResult<IEnumerable<PassengerHistoryDTO>>> GetHistory(int userId)
         {
+            // Validate: User ID must be positive
+            if (userId <= 0)
+                return BadRequest(new { message = "User ID must be a positive number." });
+
             var history = await _bookingRepo.GetPassengerHistoryAsync(userId);
+
+            // Return 404 if no bookings found
+            if (history == null || !history.Any())
+                return NotFound(new { message = $"No booking history found for User ID {userId}." });
+
             var historyDtos = history.Select(h => new PassengerHistoryDTO
             {
                 BookingId = h.BookingId,
@@ -160,7 +201,7 @@ namespace Tripzo.Controllers
 
             if (!result)
             {
-                return BadRequest("Unable to cancel ticket. It may already be cancelled or not found.");
+                return NotFound(new { message = "Booking not found, already cancelled, or does not belong to you." });
             }
 
             return Ok(new { message = "Ticket cancelled successfully. Your refund request has been sent to the operator." });

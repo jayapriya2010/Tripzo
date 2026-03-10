@@ -17,6 +17,11 @@ namespace Tripzo.Repositories
         // 1. Add a new Bus to the system
         public async Task<bool> AddBusAsync(Bus bus)
         {
+            // Check if bus number already exists
+            var exists = await _context.Buses.AnyAsync(b => b.BusNumber == bus.BusNumber);
+            if (exists)
+                return false;
+
             _context.Buses.Add(bus);
             return await _context.SaveChangesAsync() > 0;
         }
@@ -105,21 +110,45 @@ namespace Tripzo.Repositories
         }
 
         // 8. Define the physical seat map for a bus
-        public async Task<bool> ConfigureBusSeatsAsync(int busId, List<SeatConfig> seats)
+        public async Task<SeatConfigResult> ConfigureBusSeatsAsync(int busId, List<SeatConfig> seats)
         {
             // Validate bus exists
             var bus = await _context.Buses.FindAsync(busId);
-            if (bus == null) return false;
+            if (bus == null)
+                return SeatConfigResult.Fail($"Bus with ID {busId} not found.");
+
+            // Check for duplicate seat numbers within the new seats being added
+            var duplicatesInNewSeats = seats
+                .GroupBy(s => s.SeatNumber)
+                .Where(g => g.Count() > 1)
+                .Select(g => g.Key)
+                .ToList();
+
+            if (duplicatesInNewSeats.Any())
+                return SeatConfigResult.DuplicateSeats(duplicatesInNewSeats);
+
+            // Get existing seat numbers for this bus
+            var existingSeatNumbers = await _context.SeatConfigs
+                .Where(s => s.BusId == busId)
+                .Select(s => s.SeatNumber)
+                .ToListAsync();
+
+            // Check if any new seat numbers already exist for this bus
+            var conflictingSeatNumbers = seats
+                .Where(s => existingSeatNumbers.Contains(s.SeatNumber))
+                .Select(s => s.SeatNumber)
+                .ToList();
+
+            if (conflictingSeatNumbers.Any())
+                return SeatConfigResult.SeatsAlreadyExist(conflictingSeatNumbers);
 
             // Count existing seats for this bus
-            var existingCount = await _context.SeatConfigs.CountAsync(s => s.BusId == busId);
+            var existingCount = existingSeatNumbers.Count;
             var newSeatsCount = seats?.Count ?? 0;
 
             // Enforce capacity: existing + new must not exceed bus capacity
             if (existingCount + newSeatsCount > bus.Capacity)
-            {
-                return false;
-            }
+                return SeatConfigResult.Fail($"Capacity exceeded. Bus capacity is {bus.Capacity}, existing seats: {existingCount}, trying to add: {newSeatsCount}.");
 
             // Ensure all seats are linked to the correct bus
             foreach (var seat in seats)
@@ -128,7 +157,9 @@ namespace Tripzo.Repositories
             }
 
             _context.SeatConfigs.AddRange(seats);
-            return await _context.SaveChangesAsync() > 0;
+            var saved = await _context.SaveChangesAsync() > 0;
+
+            return saved ? SeatConfigResult.Ok() : SeatConfigResult.Fail("Failed to save seat configuration.");
         }
 
         // 9. Create a Route and its Stops in one transaction
