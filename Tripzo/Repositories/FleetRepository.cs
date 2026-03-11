@@ -325,5 +325,77 @@ namespace Tripzo.Repositories
             await _context.SaveChangesAsync();
             return true;
         }
+
+        // Feedback Management
+        public async Task<List<OperatorFeedbackDTO>> GetOperatorFeedbacksAsync(int operatorId)
+        {
+            return await _context.Feedbacks
+                .Include(f => f.User)
+                .Include(f => f.Bus)
+                .Include(f => f.Booking)
+                    .ThenInclude(b => b.Route)
+                .Where(f => f.Bus.OperatorId == operatorId)
+                .OrderByDescending(f => f.CreatedAt)
+                .Select(f => new OperatorFeedbackDTO
+                {
+                    FeedbackId = f.FeedbackId,
+                    BookingId = f.BookingId,
+                    BusId = f.BusId,
+                    BusName = f.Bus.BusName,
+                    BusNumber = f.Bus.BusNumber,
+                    PassengerName = f.User.FullName,
+                    PassengerEmail = f.User.Email,
+                    RouteName = $"{f.Booking.Route.SourceCity} to {f.Booking.Route.DestCity}",
+                    JourneyDate = f.Booking.JourneyDate,
+                    Rating = f.Rating,
+                    Comment = f.Comment,
+                    CreatedAt = f.CreatedAt,
+                    OperatorResponse = f.OperatorResponse,
+                    RespondedAt = f.RespondedAt
+                })
+                .ToListAsync();
+        }
+
+        public async Task<OperatorFeedbackSummaryDTO> GetOperatorFeedbackSummaryAsync(int operatorId)
+        {
+            var feedbacks = await _context.Feedbacks
+                .Include(f => f.Bus)
+                .Where(f => f.Bus.OperatorId == operatorId)
+                .ToListAsync();
+
+            var ratingGroups = feedbacks.GroupBy(f => f.Rating)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            return new OperatorFeedbackSummaryDTO
+            {
+                TotalFeedbacks = feedbacks.Count,
+                PendingResponses = feedbacks.Count(f => string.IsNullOrEmpty(f.OperatorResponse)),
+                AverageRating = feedbacks.Any() ? Math.Round(feedbacks.Average(f => f.Rating), 1) : 0,
+                FiveStarCount = ratingGroups.GetValueOrDefault(5, 0),
+                FourStarCount = ratingGroups.GetValueOrDefault(4, 0),
+                ThreeStarCount = ratingGroups.GetValueOrDefault(3, 0),
+                TwoStarCount = ratingGroups.GetValueOrDefault(2, 0),
+                OneStarCount = ratingGroups.GetValueOrDefault(1, 0)
+            };
+        }
+
+        public async Task<(bool success, string message)> RespondToFeedbackAsync(int operatorId, int feedbackId, string response)
+        {
+            var feedback = await _context.Feedbacks
+                .Include(f => f.Bus)
+                .FirstOrDefaultAsync(f => f.FeedbackId == feedbackId && f.Bus.OperatorId == operatorId);
+
+            if (feedback == null) 
+                return (false, "Feedback not found or you don't have permission to respond.");
+
+            // Check if already responded
+            if (!string.IsNullOrEmpty(feedback.OperatorResponse))
+                return (false, "This feedback has already been responded to.");
+
+            feedback.OperatorResponse = response;
+            feedback.RespondedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+            return (true, "Response submitted successfully.");
+        }
     }
 }

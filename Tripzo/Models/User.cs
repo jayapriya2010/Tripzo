@@ -17,6 +17,12 @@ namespace Tripzo.Models
         [StringLength(255)]
         public string Email { get; set; }
 
+        [Phone]
+        [StringLength(15)]
+        [RegularExpression(@"^\+?[1-9]\d{1,14}$", 
+            ErrorMessage = "Please enter a valid phone number")]
+        public string? PhoneNumber { get; set; }
+
         [Required]
         public string PasswordHash { get; set; }
 
@@ -27,7 +33,7 @@ namespace Tripzo.Models
         [StringLength(20)]
         [RegularExpression(@"^(Male|Female|Other|PreferNotToSay)$", 
             ErrorMessage = "Gender must be Male, Female, Other, or PreferNotToSay")]
-        public string Gender { get; set; }
+        public string? Gender { get; set; }
 
         public bool IsActive { get; set; } = true;
 

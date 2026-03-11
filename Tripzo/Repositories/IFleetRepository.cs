@@ -22,17 +22,21 @@ namespace Tripzo.Repositories
         // Route & Schedule Management
         Task<bool> DefineRouteWithStopsAsync(Tripzo.Models.Route route, List<RouteStop> stops);
         Task<IEnumerable<Tripzo.Models.Route>> GetBusRoutesAsync(int busId);
-        
+
         // Refund Management
         Task<IEnumerable<Booking>> GetApprovedCancellationsForOperatorAsync(int operatorId);
         Task<bool> ProcessRefundAsync(int bookingId, decimal amount);
-        
+
         // Schedule Management
         Task<List<BusSchedule>> CreateBusSchedulesAsync(int routeId, int busId, List<DateTime> dates);
         Task<List<BusSchedule>> GetSchedulesByOperatorAsync(int operatorId);
         Task<bool> DeleteScheduleAsync(int scheduleId);
 
-        Task<OperatorDashboardDTO> GetOperatorDashboardAsync(int operatorId);
+        // Feedback Management
+        Task<List<OperatorFeedbackDTO>> GetOperatorFeedbacksAsync(int operatorId);
+        Task<OperatorFeedbackSummaryDTO> GetOperatorFeedbackSummaryAsync(int operatorId);
+        Task<(bool success, string message)> RespondToFeedbackAsync(int operatorId, int feedbackId, string response);
 
+        Task<OperatorDashboardDTO> GetOperatorDashboardAsync(int operatorId);
     }
 }

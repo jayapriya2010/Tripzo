@@ -38,6 +38,7 @@ namespace Tripzo.Controllers
                 UserId = u.UserId,
                 FullName = u.FullName,
                 Email = u.Email,
+                PhoneNumber = u.PhoneNumber,
                 Role = u.Role,
                 Gender = u.Gender,
                 IsActive = u.IsActive

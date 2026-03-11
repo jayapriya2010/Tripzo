@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Tripzo.Data;
 
@@ -11,9 +12,11 @@ using Tripzo.Data;
 namespace Tripzo.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260311051248_AddPhoneNumberToUser")]
+    partial class AddPhoneNumberToUser
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -241,9 +244,6 @@ namespace Tripzo.Migrations
                     b.Property<int>("BookingId")
                         .HasColumnType("int");
 
-                    b.Property<int>("BusId")
-                        .HasColumnType("int");
-
                     b.Property<string>("Comment")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
@@ -253,15 +253,8 @@ namespace Tripzo.Migrations
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("GETUTCDATE()");
 
-                    b.Property<string>("OperatorResponse")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
                     b.Property<int>("Rating")
                         .HasColumnType("int");
-
-                    b.Property<DateTime?>("RespondedAt")
-                        .HasColumnType("datetime2");
 
                     b.Property<int>("UserId")
                         .HasColumnType("int");
@@ -270,8 +263,6 @@ namespace Tripzo.Migrations
 
                     b.HasIndex("BookingId")
                         .IsUnique();
-
-                    b.HasIndex("BusId");
 
                     b.HasIndex("UserId");
 
@@ -570,12 +561,6 @@ namespace Tripzo.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Tripzo.Models.Bus", "Bus")
-                        .WithMany()
-                        .HasForeignKey("BusId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("Tripzo.Models.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
@@ -583,8 +568,6 @@ namespace Tripzo.Migrations
                         .IsRequired();
 
                     b.Navigation("Booking");
-
-                    b.Navigation("Bus");
 
                     b.Navigation("User");
                 });

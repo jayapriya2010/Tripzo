@@ -51,6 +51,9 @@ namespace Tripzo.Controllers
                 // Calculate available seats for this route on the travel date
                 var availableSeats = await _bookingRepo.GetAvailableSeatsCountAsync(r.BusId, r.RouteId, search.TravelDate);
 
+                // Get average rating for the bus
+                var (averageRating, totalReviews) = await _bookingRepo.GetBusRatingAsync(r.BusId);
+
                 // Get actual amenities from the database
                 var amenities = r.Bus?.BusAmenities?
                     .Where(ba => ba.Amenity != null)
@@ -60,12 +63,15 @@ namespace Tripzo.Controllers
                 results.Add(new BusSearchResultDTO
                 {
                     RouteId = r.RouteId,
+                    BusId = r.BusId,
                     BusName = r.Bus?.BusName,
                     BusType = r.Bus?.BusType,
                     DepartureTime = r.RouteStops.FirstOrDefault(s => s.StopOrder == 1)?.ArrivalTime ?? TimeSpan.Zero,
                     Fare = r.BaseFare,
                     Amenities = amenities,
-                    AvailableSeats = availableSeats
+                    AvailableSeats = availableSeats,
+                    AverageRating = averageRating,
+                    TotalReviews = totalReviews
                 });
             }
 
@@ -205,6 +211,66 @@ namespace Tripzo.Controllers
             }
 
             return Ok(new { message = "Ticket cancelled successfully. Your refund request has been sent to the operator." });
+        }
+
+        // 6. Feedback: Submit feedback for a completed journey
+        [HttpPost("feedback")]
+        public async Task<ActionResult<FeedbackResponseDTO>> SubmitFeedback([FromBody] FeedbackRequestDTO request)
+        {
+            // Get user ID from JWT claims
+            var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                return Unauthorized(new { message = "Invalid user token. Please login again." });
+
+            // Check if journey is completed
+            var hasCompleted = await _bookingRepo.HasUserCompletedJourneyAsync(userId, request.BookingId);
+            if (!hasCompleted)
+                return BadRequest(new { 
+                    message = "You can only submit feedback after completing your journey.",
+                    hint = "Ensure: 1) Booking belongs to you, 2) Journey date has passed, 3) Booking is not cancelled"
+                });
+
+            // Check if feedback already exists
+            var hasFeedback = await _bookingRepo.HasFeedbackAsync(request.BookingId);
+            if (hasFeedback)
+                return BadRequest(new { message = "Feedback has already been submitted for this booking." });
+
+            var feedback = await _bookingRepo.SubmitFeedbackAsync(userId, request);
+
+            if (feedback == null)
+                return BadRequest(new { message = "Failed to submit feedback. Please verify booking details." });
+
+            return Ok(feedback);
+        }
+
+        // 7. Feedback: Get all feedbacks submitted by the user
+        [HttpGet("feedback/{userId}")]
+        public async Task<ActionResult<List<FeedbackResponseDTO>>> GetUserFeedbacks(int userId)
+        {
+            if (userId <= 0)
+                return BadRequest(new { message = "User ID must be a positive number." });
+
+            var feedbacks = await _bookingRepo.GetUserFeedbacksAsync(userId);
+
+            if (feedbacks == null || feedbacks.Count == 0)
+                return NotFound(new { message = $"No feedbacks found for User ID {userId}." });
+
+            return Ok(feedbacks);
+        }
+
+        // 8. Feedback: Get all feedbacks for a specific bus
+        [HttpGet("feedback/bus/{busId}")]
+        public async Task<ActionResult<BusFeedbackSummaryDTO>> GetBusFeedbacks(int busId)
+        {
+            if (busId <= 0)
+                return BadRequest(new { message = "Bus ID must be a positive number." });
+
+            var feedbackSummary = await _bookingRepo.GetBusFeedbackAsync(busId);
+
+            if (feedbackSummary == null)
+                return NotFound(new { message = $"Bus with ID {busId} not found." });
+
+            return Ok(feedbackSummary);
         }
     }
 }

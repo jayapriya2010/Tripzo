@@ -20,6 +20,7 @@ namespace Tripzo.Data
         public DbSet<Payment> Payments { get; set; }
         public DbSet<ErrorLog> ErrorLogs { get; set; }
         public DbSet<BusSchedule> BusSchedules { get; set; }
+        public DbSet<Feedback> Feedbacks { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             ConfigureUser(modelBuilder);
@@ -31,6 +32,7 @@ namespace Tripzo.Data
             ConfigurePayment(modelBuilder);
             ConfigureErrorLog(modelBuilder);
             ConfigureBusSchedule(modelBuilder);
+            ConfigureFeedback(modelBuilder);
 
             base.OnModelCreating(modelBuilder);
         }
@@ -217,6 +219,37 @@ namespace Tripzo.Data
                     .HasForeignKey(bs => bs.BusId)
                     .OnDelete(DeleteBehavior.Restrict);
                 entity.HasIndex(bs => new { bs.RouteId, bs.BusId, bs.ScheduledDate }).IsUnique();
+            });
+        }
+
+        private void ConfigureFeedback(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<Feedback>(entity =>
+            {
+                entity.ToTable("Feedbacks");
+                entity.HasKey(f => f.FeedbackId);
+
+                entity.Property(f => f.Comment).HasMaxLength(1000);
+                entity.Property(f => f.OperatorResponse).HasMaxLength(1000);
+                entity.Property(f => f.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                // One feedback per booking
+                entity.HasIndex(f => f.BookingId).IsUnique();
+
+                entity.HasOne(f => f.Booking)
+                      .WithOne()
+                      .HasForeignKey<Feedback>(f => f.BookingId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(f => f.User)
+                      .WithMany()
+                      .HasForeignKey(f => f.UserId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(f => f.Bus)
+                      .WithMany()
+                      .HasForeignKey(f => f.BusId)
+                      .OnDelete(DeleteBehavior.Restrict);
             });
         }
     }

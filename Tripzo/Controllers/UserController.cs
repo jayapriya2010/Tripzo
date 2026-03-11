@@ -42,6 +42,7 @@ namespace Tripzo.Controllers
             {
                 FullName = dto.FullName,
                 Email = dto.Email,
+                PhoneNumber = dto.PhoneNumber,
                 Role = dto.Role,
                 Gender = dto.Gender
             };

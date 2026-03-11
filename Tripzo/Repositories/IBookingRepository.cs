@@ -25,5 +25,15 @@ namespace Tripzo.Repositories
 
         // Get booking details for generating ticket PDF
         Task<TicketDTO?> GetBookingDetailsForTicketAsync(int bookingId);
+
+        // Feedback
+        Task<FeedbackResponseDTO?> SubmitFeedbackAsync(int userId, FeedbackRequestDTO request);
+        Task<List<FeedbackResponseDTO>> GetUserFeedbacksAsync(int userId);
+        Task<bool> HasUserCompletedJourneyAsync(int userId, int bookingId);
+        Task<bool> HasFeedbackAsync(int bookingId);
+
+        // Bus Feedback
+        Task<BusFeedbackSummaryDTO?> GetBusFeedbackAsync(int busId);
+        Task<(double? averageRating, int totalReviews)> GetBusRatingAsync(int busId);
     }
 }

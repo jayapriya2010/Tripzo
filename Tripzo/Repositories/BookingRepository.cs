@@ -257,5 +257,152 @@ namespace Tripzo.Repositories
                 BookingDate = booking.BookingDate
             };
         }
+
+        // 7. Submit feedback for a completed journey
+        public async Task<FeedbackResponseDTO?> SubmitFeedbackAsync(int userId, FeedbackRequestDTO request)
+        {
+            // Verify booking exists and belongs to user
+            var booking = await _context.Bookings
+                .Include(b => b.Route)
+                    .ThenInclude(r => r.Bus)
+                .FirstOrDefaultAsync(b => b.BookingId == request.BookingId && b.UserId == userId);
+
+            if (booking == null) return null;
+
+            // Verify journey is completed (journey date has passed)
+            if (booking.JourneyDate.Date > DateTime.Today)
+                return null;
+
+            // Check if feedback already exists
+            var existingFeedback = await _context.Feedbacks
+                .AnyAsync(f => f.BookingId == request.BookingId);
+
+            if (existingFeedback) return null;
+
+            var feedback = new Feedback
+            {
+                BookingId = request.BookingId,
+                UserId = userId,
+                BusId = booking.Route.BusId, // Add BusId from the booking's route
+                Rating = request.Rating,
+                Comment = request.Comment,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.Feedbacks.Add(feedback);
+            await _context.SaveChangesAsync();
+
+            return new FeedbackResponseDTO
+            {
+                FeedbackId = feedback.FeedbackId,
+                BookingId = feedback.BookingId,
+                RouteName = $"{booking.Route?.SourceCity} to {booking.Route?.DestCity}",
+                BusName = booking.Route?.Bus?.BusName ?? "",
+                JourneyDate = booking.JourneyDate,
+                Rating = feedback.Rating,
+                Comment = feedback.Comment,
+                CreatedAt = feedback.CreatedAt
+            };
+        }
+
+        // 8. Get all feedbacks submitted by a user
+        public async Task<List<FeedbackResponseDTO>> GetUserFeedbacksAsync(int userId)
+        {
+            return await _context.Feedbacks
+                .Include(f => f.Booking)
+                    .ThenInclude(b => b.Route)
+                        .ThenInclude(r => r.Bus)
+                .Where(f => f.UserId == userId)
+                .OrderByDescending(f => f.CreatedAt)
+                .Select(f => new FeedbackResponseDTO
+                {
+                    FeedbackId = f.FeedbackId,
+                    BookingId = f.BookingId,
+                    RouteName = $"{f.Booking.Route.SourceCity} to {f.Booking.Route.DestCity}",
+                    BusName = f.Booking.Route.Bus.BusName,
+                    JourneyDate = f.Booking.JourneyDate,
+                    Rating = f.Rating,
+                    Comment = f.Comment,
+                    CreatedAt = f.CreatedAt
+                })
+                .ToListAsync();
+        }
+
+        // 9. Check if user has completed the journey (journey date has passed)
+        public async Task<bool> HasUserCompletedJourneyAsync(int userId, int bookingId)
+        {
+            var booking = await _context.Bookings
+                .FirstOrDefaultAsync(b => b.BookingId == bookingId && b.UserId == userId);
+
+            if (booking == null) return false;
+
+            // Allow feedback for confirmed bookings where journey date has passed
+            // Also allow for completed journeys (not cancelled/refunded)
+            var validStatuses = new[] { "Confirmed", "Completed" };
+            if (!validStatuses.Contains(booking.Status)) return false;
+
+            return booking.JourneyDate.Date <= DateTime.Today;
+        }
+
+        // 10. Check if feedback already exists for a booking
+        public async Task<bool> HasFeedbackAsync(int bookingId)
+        {
+            return await _context.Feedbacks.AnyAsync(f => f.BookingId == bookingId);
+        }
+
+        // 11. Get feedback for a specific bus
+        public async Task<BusFeedbackSummaryDTO?> GetBusFeedbackAsync(int busId)
+        {
+            var bus = await _context.Buses.FindAsync(busId);
+            if (bus == null) return null;
+
+            var feedbacks = await _context.Feedbacks
+                .Include(f => f.User)
+                .Include(f => f.Booking)
+                .Where(f => f.BusId == busId)
+                .OrderByDescending(f => f.CreatedAt)
+                .ToListAsync();
+
+            var ratingGroups = feedbacks.GroupBy(f => f.Rating)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            return new BusFeedbackSummaryDTO
+            {
+                BusId = bus.BusId,
+                BusName = bus.BusName,
+                BusNumber = bus.BusNumber,
+                AverageRating = feedbacks.Any() ? Math.Round(feedbacks.Average(f => f.Rating), 1) : 0,
+                TotalReviews = feedbacks.Count,
+                FiveStarCount = ratingGroups.GetValueOrDefault(5, 0),
+                FourStarCount = ratingGroups.GetValueOrDefault(4, 0),
+                ThreeStarCount = ratingGroups.GetValueOrDefault(3, 0),
+                TwoStarCount = ratingGroups.GetValueOrDefault(2, 0),
+                OneStarCount = ratingGroups.GetValueOrDefault(1, 0),
+                Reviews = feedbacks.Select(f => new BusFeedbackDTO
+                {
+                    FeedbackId = f.FeedbackId,
+                    PassengerName = f.User?.FullName ?? "Anonymous",
+                    Rating = f.Rating,
+                    Comment = f.Comment,
+                    JourneyDate = f.Booking?.JourneyDate ?? DateTime.MinValue,
+                    CreatedAt = f.CreatedAt,
+                    OperatorResponse = f.OperatorResponse,
+                    RespondedAt = f.RespondedAt
+                }).ToList()
+            };
+        }
+
+        // 12. Get average rating for a bus
+        public async Task<(double? averageRating, int totalReviews)> GetBusRatingAsync(int busId)
+        {
+            var feedbacks = await _context.Feedbacks
+                .Where(f => f.BusId == busId)
+                .ToListAsync();
+
+            if (!feedbacks.Any())
+                return (null, 0);
+
+            return (Math.Round(feedbacks.Average(f => f.Rating), 1), feedbacks.Count);
+        }
     }
 }

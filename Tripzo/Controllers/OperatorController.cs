@@ -320,5 +320,59 @@ namespace Tripzo.Controllers
 
             return Ok(new { message = "Schedule deleted successfully." });
         }
+
+        // Feedback Management
+
+        // 14. Get all feedbacks for operator's buses
+        [HttpGet("feedbacks/{operatorId}")]
+        public async Task<ActionResult<List<OperatorFeedbackDTO>>> GetFeedbacks(int operatorId)
+        {
+            if (operatorId <= 0)
+                return BadRequest(new { message = "Operator ID must be a positive number." });
+
+            var feedbacks = await _fleetRepo.GetOperatorFeedbacksAsync(operatorId);
+
+            if (feedbacks == null || feedbacks.Count == 0)
+                return NotFound(new { message = $"No feedbacks found for Operator ID {operatorId}." });
+
+            return Ok(feedbacks);
+        }
+
+        // 15. Get feedback summary for operator
+        [HttpGet("feedbacks/{operatorId}/summary")]
+        public async Task<ActionResult<OperatorFeedbackSummaryDTO>> GetFeedbackSummary(int operatorId)
+        {
+            if (operatorId <= 0)
+                return BadRequest(new { message = "Operator ID must be a positive number." });
+
+            var summary = await _fleetRepo.GetOperatorFeedbackSummaryAsync(operatorId);
+            return Ok(summary);
+        }
+
+        // 16. Respond to a feedback
+        [HttpPost("feedbacks/respond")]
+        public async Task<ActionResult> RespondToFeedback([FromBody] FeedbackResponseRequestDTO request)
+        {
+            if (request.FeedbackId <= 0)
+                return BadRequest(new { message = "Feedback ID must be a positive number." });
+
+            if (string.IsNullOrWhiteSpace(request.Response))
+                return BadRequest(new { message = "Response cannot be empty." });
+
+            if (request.Response.Length > 1000)
+                return BadRequest(new { message = "Response cannot exceed 1000 characters." });
+
+            // Get operator ID from JWT claims
+            var operatorIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(operatorIdClaim) || !int.TryParse(operatorIdClaim, out int operatorId))
+                return Unauthorized(new { message = "Invalid operator token." });
+
+            var (success, message) = await _fleetRepo.RespondToFeedbackAsync(operatorId, request.FeedbackId, request.Response);
+
+            if (!success)
+                return BadRequest(new { message });
+
+            return Ok(new { message });
+        }
     }
 }

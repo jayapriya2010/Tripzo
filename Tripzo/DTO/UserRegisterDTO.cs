@@ -15,6 +15,12 @@ namespace Tripzo.DTOs
         [StringLength(255, ErrorMessage = "Email cannot exceed 255 characters")]
         public string Email { get; set; }
 
+        [Phone(ErrorMessage = "Invalid phone number format")]
+        [StringLength(15, ErrorMessage = "Phone number cannot exceed 15 characters")]
+        [RegularExpression(@"^\+?[1-9]\d{1,14}$", 
+            ErrorMessage = "Please enter a valid phone number (E.164 format)")]
+        public string? PhoneNumber { get; set; }
+
         [Required(ErrorMessage = "Password is required")]
         [StringLength(100, MinimumLength = 6, ErrorMessage = "Password must be between 6 and 100 characters")]
         public string Password { get; set; }
@@ -27,6 +33,6 @@ namespace Tripzo.DTOs
         [StringLength(20)]
         [RegularExpression(@"^(Male|Female|Other|PreferNotToSay)$", 
             ErrorMessage = "Gender must be Male, Female, Other, or PreferNotToSay")]
-        public string Gender { get; set; }
+        public string? Gender { get; set; }
     }
 }
