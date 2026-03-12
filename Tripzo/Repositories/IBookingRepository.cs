@@ -5,7 +5,10 @@ namespace Tripzo.Repositories
 {
     public interface IBookingRepository
     {
-        // Search for available journeys
+        // Search for available journeys (returns scheduled buses for the specific date)
+        Task<List<ScheduledRouteDTO>> SearchScheduledRoutesAsync(string fromCity, string toCity, DateTime travelDate);
+
+        // Legacy method - kept for compatibility
         Task<List<Tripzo.Models.Route>> SearchRoutesAsync(string fromCity, string toCity, DateTime travelDate);
 
         // Consolidated method to get the visual map of seats (Available vs Occupied)
@@ -14,14 +17,14 @@ namespace Tripzo.Repositories
         // Get count of available seats for a bus on a specific date
         Task<int> GetAvailableSeatsCountAsync(int busId, int routeId, DateTime travelDate);
 
-        // Core Booking Transaction
-        Task<Booking> CreateBookingAsync(Booking booking, List<int> seatIds);
+        // Core Booking Transaction (busId is the scheduled bus for that date)
+        Task<Booking> CreateBookingAsync(Booking booking, int busId, List<int> seatIds);
 
         // Passenger history
         Task<IEnumerable<Booking>> GetPassengerHistoryAsync(int userId);
 
         // Cancel a booking (with refund logic placeholder)
-        Task<bool> CancelBookingAsync(int bookingId, int userId);
+        Task<CancellationResultDTO> CancelBookingAsync(int bookingId, int userId);
 
         // Get booking details for generating ticket PDF
         Task<TicketDTO?> GetBookingDetailsForTicketAsync(int bookingId);

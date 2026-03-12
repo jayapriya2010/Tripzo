@@ -4,6 +4,7 @@ using Tripzo.Models;
 using Tripzo.DTOs.Operator;
 using Tripzo.DTO.Admin;
 using Tripzo.Repositories;
+using Tripzo.Services;
 using AutoMapper;
 
 namespace Tripzo.Controllers
@@ -15,11 +16,13 @@ namespace Tripzo.Controllers
     {
         private readonly IFleetRepository _fleetRepo;
         private readonly IMapper _mapper;
+        private readonly IEmailService _emailService;
 
-        public OperatorController(IFleetRepository fleetRepo, IMapper mapper)
+        public OperatorController(IFleetRepository fleetRepo, IMapper mapper, IEmailService emailService)
         {
             _fleetRepo = fleetRepo;
             _mapper = mapper;
+            _emailService = emailService;
         }
 
         // 1. Dashboard: Provides performance metrics for the landing page
@@ -192,9 +195,29 @@ namespace Tripzo.Controllers
                 return BadRequest(new { message = "Refund amount must be greater than zero." });
 
             var result = await _fleetRepo.ProcessRefundAsync(dto.BookingId, dto.RefundAmount);
-            if (!result) return NotFound(new { message = "Booking not found, not approved for refund, or already refunded." });
 
-            return Ok(new { message = "Refund processed successfully." });
+            if (!result.Success)
+                return NotFound(new { message = result.Message });
+
+            // Send refund initiated email to passenger
+            if (!string.IsNullOrEmpty(result.PassengerEmail))
+            {
+                try
+                {
+                    await _emailService.SendRefundInitiatedEmailAsync(
+                        result.PassengerEmail,
+                        result.PassengerName,
+                        result.BookingId,
+                        result.RouteName,
+                        result.RefundAmount);
+                }
+                catch
+                {
+                    // Log email error but don't fail the refund
+                }
+            }
+
+            return Ok(new { message = result.Message });
         }
 
         // 10. View Approved Cancellations for Refund Processing
@@ -296,6 +319,32 @@ namespace Tripzo.Controllers
 
             if (schedules == null || schedules.Count == 0)
                 return NotFound(new { message = $"No schedules found for Operator ID {operatorId}." });
+
+            var response = schedules.Select(s => new ScheduleResponseDTO
+            {
+                ScheduleId = s.ScheduleId,
+                RouteName = $"{s.Route.SourceCity} to {s.Route.DestCity}",
+                BusName = s.Bus.BusName,
+                ScheduledDate = s.ScheduledDate,
+                IsActive = s.IsActive
+            }).ToList();
+
+            return Ok(response);
+        }
+
+        [HttpGet("schedules/{busId}")]
+        public async Task<ActionResult<List<ScheduleResponseDTO>>> GetSchedulesByBusId(int busId, [FromQuery] int operatorId)
+        {
+            if (busId <= 0)
+                return BadRequest(new { message = "Bus ID must be a positive number." });
+
+            if (operatorId <= 0)
+                return BadRequest(new { message = "Operator ID must be a positive number." });
+
+            var schedules = await _fleetRepo.GetSchedulesByBusIdAsync(busId, operatorId);
+
+            if (schedules == null || schedules.Count == 0)
+                return NotFound(new { message = $"No schedules found for Bus ID {busId}." });
 
             var response = schedules.Select(s => new ScheduleResponseDTO
             {

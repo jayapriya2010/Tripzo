@@ -8,6 +8,10 @@ namespace Tripzo.DTOs.Passenger
         [Range(1, int.MaxValue, ErrorMessage = "Route ID must be a positive number.")]
         public int RouteId { get; set; }
 
+        [Required(ErrorMessage = "Bus ID is required.")]
+        [Range(1, int.MaxValue, ErrorMessage = "Bus ID must be a positive number.")]
+        public int BusId { get; set; }
+
         [Required(ErrorMessage = "User ID is required.")]
         [Range(1, int.MaxValue, ErrorMessage = "User ID must be a positive number.")]
         public int UserId { get; set; }

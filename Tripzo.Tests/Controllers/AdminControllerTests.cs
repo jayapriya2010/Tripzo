@@ -2,8 +2,10 @@ using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Tripzo.Controllers;
 using Tripzo.DTO.Admin;
+using Tripzo.DTOs.Admin;
 using Tripzo.Models;
 using Tripzo.Repositories;
+using Tripzo.Services;
 
 namespace Tripzo.Tests.Controllers
 {
@@ -14,13 +16,15 @@ namespace Tripzo.Tests.Controllers
     public class AdminControllerTests
     {
         private Mock<IAdminRepository> _mockAdminRepo;
+        private Mock<IEmailService> _mockEmailService;
         private AdminController _controller;
 
         [SetUp]
         public void Setup()
         {
             _mockAdminRepo = new Mock<IAdminRepository>();
-            _controller = new AdminController(_mockAdminRepo.Object);
+            _mockEmailService = new Mock<IEmailService>();
+            _controller = new AdminController(_mockAdminRepo.Object, _mockEmailService.Object);
         }
 
         #region User Management - Critical Tests
@@ -64,7 +68,7 @@ namespace Tripzo.Tests.Controllers
         {
             // Arrange
             _mockAdminRepo.Setup(r => r.ApproveCancellationAsync(It.IsAny<int>()))
-                .ReturnsAsync(true);
+                .ReturnsAsync(new CancellationApprovalResultDTO { Success = true, Message = "Cancellation approved." });
 
             // Act
             var result = await _controller.ApproveCancellation(1);
@@ -79,7 +83,7 @@ namespace Tripzo.Tests.Controllers
         {
             // Arrange
             _mockAdminRepo.Setup(r => r.ApproveCancellationAsync(It.IsAny<int>()))
-                .ReturnsAsync(false);
+                .ReturnsAsync(new CancellationApprovalResultDTO { Success = false, Message = "Booking not found." });
 
             // Act
             var result = await _controller.ApproveCancellation(999);
@@ -93,13 +97,27 @@ namespace Tripzo.Tests.Controllers
         {
             // Arrange
             _mockAdminRepo.Setup(r => r.RejectCancellationAsync(It.IsAny<int>()))
-                .ReturnsAsync(true);
+                .ReturnsAsync(new CancellationRejectionResultDTO { Success = true, Message = "Cancellation rejected." });
 
             // Act
             var result = await _controller.RejectCancellation(1);
 
             // Assert
             Assert.That(result, Is.TypeOf<OkObjectResult>());
+        }
+
+        [Test]
+        public async Task RejectCancellation_WithInvalidBooking_ShouldReturnNotFound()
+        {
+            // Arrange
+            _mockAdminRepo.Setup(r => r.RejectCancellationAsync(It.IsAny<int>()))
+                .ReturnsAsync(new CancellationRejectionResultDTO { Success = false, Message = "Booking not found." });
+
+            // Act
+            var result = await _controller.RejectCancellation(999);
+
+            // Assert
+            Assert.That(result, Is.TypeOf<NotFoundObjectResult>());
         }
 
         #endregion

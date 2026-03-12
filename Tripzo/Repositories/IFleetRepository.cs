@@ -25,11 +25,12 @@ namespace Tripzo.Repositories
 
         // Refund Management
         Task<IEnumerable<Booking>> GetApprovedCancellationsForOperatorAsync(int operatorId);
-        Task<bool> ProcessRefundAsync(int bookingId, decimal amount);
+        Task<RefundResultDTO> ProcessRefundAsync(int bookingId, decimal amount);
 
         // Schedule Management
         Task<List<BusSchedule>> CreateBusSchedulesAsync(int routeId, int busId, List<DateTime> dates);
         Task<List<BusSchedule>> GetSchedulesByOperatorAsync(int operatorId);
+        Task<List<BusSchedule>> GetSchedulesByBusIdAsync(int busId, int operatorId);
         Task<bool> DeleteScheduleAsync(int scheduleId);
         Task<ScheduleDeactivationResultDTO> DeactivateScheduleWithCheckAsync(int scheduleId);
         Task<ReassignBusResultDTO> ReassignBusToScheduleAsync(int scheduleId, int newBusId);

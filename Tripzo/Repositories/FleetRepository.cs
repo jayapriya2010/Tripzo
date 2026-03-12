@@ -212,20 +212,45 @@ namespace Tripzo.Repositories
         }
 
         // 12. Process a refund for a cancelled booking
-        public async Task<bool> ProcessRefundAsync(int bookingId, decimal amount)
+        public async Task<RefundResultDTO> ProcessRefundAsync(int bookingId, decimal amount)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // 1. Find the booking with its original payment info
+                // 1. Find the booking with its original payment info and user details
                 var booking = await _context.Bookings
                     .Include(b => b.Payment)
+                    .Include(b => b.User)
+                    .Include(b => b.Route)
                     .FirstOrDefaultAsync(b => b.BookingId == bookingId);
 
-                // 2. Strict Validation: Must be approved by admin and refund cannot exceed original price
-                if (booking == null || booking.Status != "CancellationApproved") return false;
-                if (booking.Payment == null) return false;
-                if (amount > booking.TotalAmount) return false;
+                // 2. Strict Validation: Must be approved by admin
+                if (booking == null || booking.Status != "CancellationApproved")
+                {
+                    return new RefundResultDTO
+                    {
+                        Success = false,
+                        Message = "Booking not found or not approved for refund."
+                    };
+                }
+
+                if (booking.Payment == null)
+                {
+                    return new RefundResultDTO
+                    {
+                        Success = false,
+                        Message = "Payment record not found for this booking."
+                    };
+                }
+
+                if (amount > booking.TotalAmount)
+                {
+                    return new RefundResultDTO
+                    {
+                        Success = false,
+                        Message = "Refund amount cannot exceed the original booking amount."
+                    };
+                }
 
                 // 3. Update status to Refunded
                 booking.Status = "Refunded";
@@ -238,12 +263,26 @@ namespace Tripzo.Repositories
 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
-                return true;
+
+                return new RefundResultDTO
+                {
+                    Success = true,
+                    Message = "Refund processed successfully.",
+                    BookingId = booking.BookingId,
+                    PassengerName = booking.User?.FullName ?? "Passenger",
+                    PassengerEmail = booking.User?.Email ?? "",
+                    RouteName = $"{booking.Route?.SourceCity} to {booking.Route?.DestCity}",
+                    RefundAmount = amount
+                };
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 await transaction.RollbackAsync();
-                return false;
+                return new RefundResultDTO
+                {
+                    Success = false,
+                    Message = "An error occurred while processing the refund."
+                };
             }
         }
 
@@ -312,6 +351,16 @@ namespace Tripzo.Repositories
                 .Include(bs => bs.Route)
                 .Include(bs => bs.Bus)
                 .Where(bs => bs.Bus.OperatorId == operatorId && bs.IsActive)
+                .OrderBy(bs => bs.ScheduledDate)
+                .ToListAsync();
+        }
+
+        public async Task<List<BusSchedule>> GetSchedulesByBusIdAsync(int busId, int operatorId)
+        {
+            return await _context.BusSchedules
+                .Include(bs => bs.Route)
+                .Include(bs => bs.Bus)
+                .Where(bs => bs.BusId == busId && bs.Bus.OperatorId == operatorId)
                 .OrderBy(bs => bs.ScheduledDate)
                 .ToListAsync();
         }

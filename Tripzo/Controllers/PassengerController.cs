@@ -38,36 +38,37 @@ namespace Tripzo.Controllers
             if (search.FromCity.Equals(search.ToCity, StringComparison.OrdinalIgnoreCase))
                 return BadRequest(new { message = "Source and destination cities cannot be the same." });
 
-            var routes = await _bookingRepo.SearchRoutesAsync(search.FromCity, search.ToCity, search.TravelDate);
+            // Use the new schedule-aware search that returns the actual bus for that date
+            var scheduledRoutes = await _bookingRepo.SearchScheduledRoutesAsync(search.FromCity, search.ToCity, search.TravelDate);
 
             // Return 404 if no routes found
-            if (routes == null || routes.Count == 0)
+            if (scheduledRoutes == null || scheduledRoutes.Count == 0)
                 return NotFound(new { message = $"No buses found from {search.FromCity} to {search.ToCity} on {search.TravelDate:yyyy-MM-dd}." });
 
             var results = new List<BusSearchResultDTO>();
 
-            foreach (var r in routes)
+            foreach (var sr in scheduledRoutes)
             {
-                // Calculate available seats for this route on the travel date
-                var availableSeats = await _bookingRepo.GetAvailableSeatsCountAsync(r.BusId, r.RouteId, search.TravelDate);
+                // Calculate available seats using the SCHEDULED bus (not route's default bus)
+                var availableSeats = await _bookingRepo.GetAvailableSeatsCountAsync(sr.BusId, sr.RouteId, search.TravelDate);
 
-                // Get average rating for the bus
-                var (averageRating, totalReviews) = await _bookingRepo.GetBusRatingAsync(r.BusId);
+                // Get average rating for the SCHEDULED bus
+                var (averageRating, totalReviews) = await _bookingRepo.GetBusRatingAsync(sr.BusId);
 
-                // Get actual amenities from the database
-                var amenities = r.Bus?.BusAmenities?
+                // Get actual amenities from the SCHEDULED bus
+                var amenities = sr.Bus?.BusAmenities?
                     .Where(ba => ba.Amenity != null)
                     .Select(ba => ba.Amenity.AmenityName)
                     .ToList() ?? new List<string>();
 
                 results.Add(new BusSearchResultDTO
                 {
-                    RouteId = r.RouteId,
-                    BusId = r.BusId,
-                    BusName = r.Bus?.BusName,
-                    BusType = r.Bus?.BusType,
-                    DepartureTime = r.RouteStops.FirstOrDefault(s => s.StopOrder == 1)?.ArrivalTime ?? TimeSpan.Zero,
-                    Fare = r.BaseFare,
+                    RouteId = sr.RouteId,
+                    BusId = sr.BusId, // This is now the SCHEDULED bus, not route's default
+                    BusName = sr.Bus?.BusName,
+                    BusType = sr.Bus?.BusType,
+                    DepartureTime = sr.Route?.RouteStops?.FirstOrDefault(s => s.StopOrder == 1)?.ArrivalTime ?? TimeSpan.Zero,
+                    Fare = sr.Route?.BaseFare ?? 0,
                     Amenities = amenities,
                     AvailableSeats = availableSeats,
                     AverageRating = averageRating,
@@ -130,7 +131,8 @@ namespace Tripzo.Controllers
                 };
 
                 // Uses a Transaction to ensure all seats are booked or none
-                var result = await _bookingRepo.CreateBookingAsync(booking, request.SelectedSeatIds);
+                // Pass the BusId from the search result (the scheduled bus for that date)
+                var result = await _bookingRepo.CreateBookingAsync(booking, request.BusId, request.SelectedSeatIds);
 
                 if (result == null)
                 {
@@ -205,12 +207,31 @@ namespace Tripzo.Controllers
         {
             var result = await _bookingRepo.CancelBookingAsync(request.BookingId, request.UserId);
 
-            if (!result)
+            if (!result.Success)
             {
-                return NotFound(new { message = "Booking not found, already cancelled, or does not belong to you." });
+                return NotFound(new { message = result.Message });
             }
 
-            return Ok(new { message = "Ticket cancelled successfully. Your refund request has been sent to the operator." });
+            // Send cancellation request email to passenger
+            if (!string.IsNullOrEmpty(result.PassengerEmail))
+            {
+                try
+                {
+                    await _emailService.SendCancellationRequestEmailAsync(
+                        result.PassengerEmail,
+                        result.PassengerName,
+                        result.BookingId,
+                        result.RouteName,
+                        result.JourneyDate,
+                        result.Amount);
+                }
+                catch
+                {
+                    // Log email error but don't fail the cancellation
+                }
+            }
+
+            return Ok(new { message = result.Message });
         }
 
         // 6. Feedback: Submit feedback for a completed journey

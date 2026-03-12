@@ -16,8 +16,8 @@ namespace Tripzo.Repositories
 
         // Cancellation Approval Workflow
         Task<IEnumerable<Booking>> GetPendingCancellationsAsync();
-        Task<bool> ApproveCancellationAsync(int bookingId);
-        Task<bool> RejectCancellationAsync(int bookingId);
+        Task<CancellationApprovalResultDTO> ApproveCancellationAsync(int bookingId);
+        Task<CancellationRejectionResultDTO> RejectCancellationAsync(int bookingId);
 
         // Route Management
         Task<IEnumerable<Tripzo.Models.Route>> GetAllRoutesAsync();

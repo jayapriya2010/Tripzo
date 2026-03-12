@@ -5,6 +5,7 @@ using Tripzo.Controllers;
 using Tripzo.DTOs.Operator;
 using Tripzo.Models;
 using Tripzo.Repositories;
+using Tripzo.Services;
 
 namespace Tripzo.Tests.Controllers
 {
@@ -16,6 +17,7 @@ namespace Tripzo.Tests.Controllers
     {
         private Mock<IFleetRepository> _mockFleetRepo;
         private Mock<IMapper> _mockMapper;
+        private Mock<IEmailService> _mockEmailService;
         private OperatorController _controller;
 
         [SetUp]
@@ -23,7 +25,8 @@ namespace Tripzo.Tests.Controllers
         {
             _mockFleetRepo = new Mock<IFleetRepository>();
             _mockMapper = new Mock<IMapper>();
-            _controller = new OperatorController(_mockFleetRepo.Object, _mockMapper.Object);
+            _mockEmailService = new Mock<IEmailService>();
+            _controller = new OperatorController(_mockFleetRepo.Object, _mockMapper.Object, _mockEmailService.Object);
         }
 
         #region Seat Configuration - Critical Tests
@@ -73,7 +76,8 @@ namespace Tripzo.Tests.Controllers
         {
             // Arrange
             var dto = new RefundRequestDTO { BookingId = 1, RefundAmount = 500 };
-            _mockFleetRepo.Setup(r => r.ProcessRefundAsync(1, 500)).ReturnsAsync(true);
+            _mockFleetRepo.Setup(r => r.ProcessRefundAsync(1, 500))
+                .ReturnsAsync(new RefundResultDTO { Success = true, Message = "Refund processed successfully." });
 
             // Act
             var result = await _controller.ProcessRefund(dto);
@@ -87,7 +91,8 @@ namespace Tripzo.Tests.Controllers
         {
             // Arrange
             var dto = new RefundRequestDTO { BookingId = 999, RefundAmount = 500 };
-            _mockFleetRepo.Setup(r => r.ProcessRefundAsync(999, 500)).ReturnsAsync(false);
+            _mockFleetRepo.Setup(r => r.ProcessRefundAsync(999, 500))
+                .ReturnsAsync(new RefundResultDTO { Success = false, Message = "Booking not found or not approved for refund." });
 
             // Act
             var result = await _controller.ProcessRefund(dto);

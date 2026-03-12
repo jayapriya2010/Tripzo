@@ -5,6 +5,7 @@ using Tripzo.DTO.Admin;
 using Tripzo.DTOs.Admin;
 using Tripzo.Models;
 using Tripzo.Repositories;
+using Tripzo.Services;
 
 
 
@@ -16,10 +17,12 @@ namespace Tripzo.Controllers
     public class AdminController : ControllerBase
     {
         private readonly IAdminRepository _adminRepo;
+        private readonly IEmailService _emailService;
 
-        public AdminController(IAdminRepository adminRepo)
+        public AdminController(IAdminRepository adminRepo, IEmailService emailService)
         {
             _adminRepo = adminRepo;
+            _emailService = emailService;
         }
 
         // Example: Retrieve authenticated user info from JWT claims
@@ -148,9 +151,29 @@ namespace Tripzo.Controllers
                 return BadRequest(new { message = "Booking ID must be a positive number." });
 
             var result = await _adminRepo.ApproveCancellationAsync(bookingId);
-            if (!result) return NotFound(new { message = $"Booking with ID {bookingId} not found or is not in a cancellable state." });
 
-            return Ok(new { message = "Cancellation approved. Operator can now process the refund." });
+            if (!result.Success)
+                return NotFound(new { message = result.Message });
+
+            // Send cancellation approved email to passenger
+            if (!string.IsNullOrEmpty(result.PassengerEmail))
+            {
+                try
+                {
+                    await _emailService.SendCancellationApprovedEmailAsync(
+                        result.PassengerEmail,
+                        result.PassengerName,
+                        result.BookingId,
+                        result.RouteName,
+                        result.Amount);
+                }
+                catch
+                {
+                    // Log email error but don't fail the approval
+                }
+            }
+
+            return Ok(new { message = result.Message });
         }
 
         // 6. Reject Cancellation Request
@@ -161,9 +184,30 @@ namespace Tripzo.Controllers
                 return BadRequest(new { message = "Booking ID must be a positive number." });
 
             var result = await _adminRepo.RejectCancellationAsync(bookingId);
-            if (!result) return NotFound(new { message = $"Booking with ID {bookingId} not found or cannot be rejected." });
 
-            return Ok(new { message = "Cancellation rejected. Booking reverted to Confirmed status." });
+            if (!result.Success)
+                return NotFound(new { message = result.Message });
+
+            // Send cancellation rejected email to passenger
+            if (!string.IsNullOrEmpty(result.PassengerEmail))
+            {
+                try
+                {
+                    await _emailService.SendCancellationRejectedEmailAsync(
+                        result.PassengerEmail,
+                        result.PassengerName,
+                        result.BookingId,
+                        result.RouteName,
+                        result.JourneyDate,
+                        result.Amount);
+                }
+                catch
+                {
+                    // Log email error but don't fail the rejection
+                }
+            }
+
+            return Ok(new { message = result.Message });
         }
 
         // 7. View All Routes with Pagination and Filters

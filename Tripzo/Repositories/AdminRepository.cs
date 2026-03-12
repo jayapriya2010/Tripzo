@@ -148,25 +148,68 @@ namespace Tripzo.Repositories
         }
 
         // Admin approves cancellation - allows operator to process refund
-        public async Task<bool> ApproveCancellationAsync(int bookingId)
+        public async Task<CancellationApprovalResultDTO> ApproveCancellationAsync(int bookingId)
         {
-            var booking = await _context.Bookings.FindAsync(bookingId);
+            var booking = await _context.Bookings
+                .Include(b => b.User)
+                .Include(b => b.Route)
+                .FirstOrDefaultAsync(b => b.BookingId == bookingId);
+
             if (booking == null || booking.Status != "Cancelled")
-                return false;
+            {
+                return new CancellationApprovalResultDTO
+                {
+                    Success = false,
+                    Message = "Booking not found or is not in a cancellable state."
+                };
+            }
 
             booking.Status = "CancellationApproved";
-            return await _context.SaveChangesAsync() > 0;
+            await _context.SaveChangesAsync();
+
+            return new CancellationApprovalResultDTO
+            {
+                Success = true,
+                Message = "Cancellation approved. Operator can now process the refund.",
+                BookingId = booking.BookingId,
+                PassengerName = booking.User?.FullName ?? "Passenger",
+                PassengerEmail = booking.User?.Email ?? "",
+                RouteName = $"{booking.Route?.SourceCity} to {booking.Route?.DestCity}",
+                Amount = booking.TotalAmount
+            };
         }
 
         // Admin rejects cancellation - reverts to Confirmed
-        public async Task<bool> RejectCancellationAsync(int bookingId)
+        public async Task<CancellationRejectionResultDTO> RejectCancellationAsync(int bookingId)
         {
-            var booking = await _context.Bookings.FindAsync(bookingId);
+            var booking = await _context.Bookings
+                .Include(b => b.User)
+                .Include(b => b.Route)
+                .FirstOrDefaultAsync(b => b.BookingId == bookingId);
+
             if (booking == null || booking.Status != "Cancelled")
-                return false;
+            {
+                return new CancellationRejectionResultDTO
+                {
+                    Success = false,
+                    Message = "Booking not found or cannot be rejected."
+                };
+            }
 
             booking.Status = "Confirmed";
-            return await _context.SaveChangesAsync() > 0;
+            await _context.SaveChangesAsync();
+
+            return new CancellationRejectionResultDTO
+            {
+                Success = true,
+                Message = "Cancellation rejected. Booking has been restored to Confirmed status.",
+                BookingId = booking.BookingId,
+                PassengerName = booking.User?.FullName ?? "Passenger",
+                PassengerEmail = booking.User?.Email ?? "",
+                RouteName = $"{booking.Route?.SourceCity} to {booking.Route?.DestCity}",
+                JourneyDate = booking.JourneyDate,
+                Amount = booking.TotalAmount
+            };
         }
 
         // Get all routes in the system

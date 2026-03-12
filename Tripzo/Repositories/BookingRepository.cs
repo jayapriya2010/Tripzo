@@ -15,7 +15,36 @@ namespace Tripzo.Repositories
             _context = context;
         }
 
-        // 1. Search for Routes: Includes Bus, BusAmenities and Stops, ensuring the Bus is Active
+        // 1. Search for Scheduled Routes: Returns the actual bus scheduled for that specific date
+        // Note: Bus.IsActive is for preventing NEW schedules, not for hiding existing active schedules
+        public async Task<List<ScheduledRouteDTO>> SearchScheduledRoutesAsync(string fromCity, string toCity, DateTime travelDate)
+        {
+            return await _context.BusSchedules
+                .Include(bs => bs.Bus)
+                    .ThenInclude(b => b.BusAmenities)
+                        .ThenInclude(ba => ba.Amenity)
+                .Include(bs => bs.Bus)
+                    .ThenInclude(b => b.SeatConfigs)
+                .Include(bs => bs.Route)
+                    .ThenInclude(r => r.RouteStops)
+                .Where(bs => bs.Route.SourceCity.ToLower() == fromCity.ToLower() &&
+                            bs.Route.DestCity.ToLower() == toCity.ToLower() &&
+                            bs.ScheduledDate.Date == travelDate.Date &&
+                            bs.IsActive) // Only check if schedule is active, not bus
+                .Select(bs => new ScheduledRouteDTO
+                {
+                    ScheduleId = bs.ScheduleId,
+                    RouteId = bs.RouteId,
+                    BusId = bs.BusId,
+                    Bus = bs.Bus,
+                    Route = bs.Route,
+                    ScheduledDate = bs.ScheduledDate
+                })
+                .ToListAsync();
+        }
+
+        // Legacy search method - kept for compatibility
+        // Note: Only checks BusSchedule.IsActive, not Bus.IsActive (bus deactivation is for future scheduling only)
         public async Task<List<Tripzo.Models.Route>> SearchRoutesAsync(string fromCity, string toCity, DateTime travelDate)
         {
             return await _context.Routes
@@ -28,7 +57,7 @@ namespace Tripzo.Repositories
                            _context.BusSchedules.Any(bs => 
                                bs.RouteId == r.RouteId && 
                                bs.ScheduledDate.Date == travelDate.Date &&
-                               bs.IsActive))
+                               bs.IsActive)) // Only check schedule is active
                 .ToListAsync();
         }
         // 2. Real-time Seat Layout: Combines physical layout with current bookings
@@ -76,7 +105,8 @@ namespace Tripzo.Repositories
         }
 
         // 3. Create a Booking: Uses a Database Transaction for Atomic Group Booking
-        public async Task<Booking> CreateBookingAsync(Booking booking, List<int> seatIds)
+        // busId is the scheduled bus for that specific date (may differ from route's default bus)
+        public async Task<Booking> CreateBookingAsync(Booking booking, int busId, List<int> seatIds)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
@@ -88,26 +118,49 @@ namespace Tripzo.Repositories
 
                 // 2. Verify route exists
                 var route = await _context.Routes
-                    .Include(r => r.Bus)
                     .FirstOrDefaultAsync(r => r.RouteId == booking.RouteId);
                 if (route == null)
                     throw new Exception($"Route {booking.RouteId} not found");
 
-                // 3. Verify boarding and dropping stops exist for this route
-                var validStops = await _context.RouteStops
-                    .Where(rs => rs.RouteId == booking.RouteId &&
-                                (rs.StopId == booking.BoardingStopId || rs.StopId == booking.DroppingStopId))
-                    .Select(rs => rs.StopId)
-                    .ToListAsync();
+                // 3. Verify there's an active schedule for this route + bus + date combination
+                var activeSchedule = await _context.BusSchedules
+                    .Include(bs => bs.Bus)
+                    .FirstOrDefaultAsync(bs => bs.RouteId == booking.RouteId &&
+                                              bs.BusId == busId &&
+                                              bs.ScheduledDate.Date == booking.JourneyDate.Date &&
+                                              bs.IsActive);
+                if (activeSchedule == null)
+                    throw new Exception($"No active schedule found for this route and bus on {booking.JourneyDate:yyyy-MM-dd}");
 
-                if (!validStops.Contains(booking.BoardingStopId))
-                    throw new Exception($"Boarding stop {booking.BoardingStopId} is not valid for this route");
-                if (!validStops.Contains(booking.DroppingStopId))
-                    throw new Exception($"Dropping stop {booking.DroppingStopId} is not valid for this route");
+                // 4. Verify boarding stop exists and is of type "Boarding"
+                var boardingStop = await _context.RouteStops
+                    .FirstOrDefaultAsync(rs => rs.RouteId == booking.RouteId && 
+                                              rs.StopId == booking.BoardingStopId);
 
-                // 4. Verify all seats exist and belong to the bus
+                if (boardingStop == null)
+                    throw new Exception($"Boarding stop {booking.BoardingStopId} is not valid for this route.");
+
+                if (boardingStop.StopType != "Boarding")
+                    throw new Exception($"Stop '{boardingStop.LocationName}' (ID: {booking.BoardingStopId}) is not a boarding point. It is a '{boardingStop.StopType}' stop.");
+
+                // 5. Verify dropping stop exists and is of type "Dropping"
+                var droppingStop = await _context.RouteStops
+                    .FirstOrDefaultAsync(rs => rs.RouteId == booking.RouteId && 
+                                              rs.StopId == booking.DroppingStopId);
+
+                if (droppingStop == null)
+                    throw new Exception($"Dropping stop {booking.DroppingStopId} is not valid for this route.");
+
+                if (droppingStop.StopType != "Dropping")
+                    throw new Exception($"Stop '{droppingStop.LocationName}' (ID: {booking.DroppingStopId}) is not a dropping point. It is a '{droppingStop.StopType}' stop.");
+
+                // 6. Verify boarding stop comes before dropping stop in the route order
+                if (boardingStop.StopOrder >= droppingStop.StopOrder)
+                    throw new Exception($"Boarding stop '{boardingStop.LocationName}' (Order: {boardingStop.StopOrder}) must come before dropping stop '{droppingStop.LocationName}' (Order: {droppingStop.StopOrder}).");
+
+                // 7. Verify all seats exist and belong to the SCHEDULED bus (not route's default bus)
                 var busSeats = await _context.SeatConfigs
-                    .Where(s => s.BusId == route.BusId && seatIds.Contains(s.SeatId))
+                    .Where(s => s.BusId == busId && seatIds.Contains(s.SeatId))
                     .Select(s => s.SeatId)
                     .ToListAsync();
 
@@ -119,16 +172,18 @@ namespace Tripzo.Repositories
                         .Where(s => invalidSeats.Contains(s.SeatId))
                         .Select(s => new { s.SeatId, s.BusId })
                         .ToListAsync();
-                    
+
                     var debugInfo = string.Join(", ", actualBusIds.Select(x => $"Seat {x.SeatId} is on Bus {x.BusId}"));
-                    throw new Exception($"Seats {string.Join(", ", invalidSeats)} do not belong to bus {route.Bus.BusName} (BusId: {route.BusId}). {debugInfo}");
+                    throw new Exception($"Seats {string.Join(", ", invalidSeats)} do not belong to bus {activeSchedule.Bus.BusName} (BusId: {busId}). {debugInfo}");
                 }
 
-                // 5. Verify all seats are available before proceeding
+                // 8. Verify all seats are available before proceeding
+                // Check against the specific bus's seats for this route and date
                 var occupiedSeatIds = await _context.BookedSeats
                     .Where(bs => bs.Booking.RouteId == booking.RouteId &&
                                  bs.Booking.JourneyDate.Date == booking.JourneyDate.Date &&
                                  bs.Booking.Status == "Confirmed" &&
+                                 bs.Seat.BusId == busId &&
                                  seatIds.Contains(bs.SeatId))
                     .Select(bs => bs.SeatId)
                     .ToListAsync();
@@ -138,11 +193,11 @@ namespace Tripzo.Repositories
                     throw new Exception($"Seats {string.Join(", ", occupiedSeatIds)} are already booked");
                 }
 
-                // 6. Save the main Booking record
+                // 9. Save the main Booking record
                 _context.Bookings.Add(booking);
                 await _context.SaveChangesAsync();
 
-                // 7. Link the selected seats to this booking
+                // 10. Link the selected seats to this booking
                 foreach (var seatId in seatIds)
                 {
                     _context.BookedSeats.Add(new BookedSeat
@@ -152,7 +207,7 @@ namespace Tripzo.Repositories
                     });
                 }
 
-                // 8. ATOMIC PAYMENT: Create the payment record immediately
+                // 11. ATOMIC PAYMENT: Create the payment record immediately
                 var payment = new Payment
                 {
                     BookingId = booking.BookingId,
@@ -171,7 +226,7 @@ namespace Tripzo.Repositories
             catch (Exception ex)
             {
                 await transaction.RollbackAsync(); // If anything fails, nothing is saved
-                
+
                 // Get the most detailed error message
                 var errorMessage = ex.Message;
                 var innerEx = ex.InnerException;
@@ -180,7 +235,7 @@ namespace Tripzo.Repositories
                     errorMessage += $" | Inner: {innerEx.Message}";
                     innerEx = innerEx.InnerException;
                 }
-                
+
                 // Re-throw the exception with full details
                 throw new ApplicationException($"Booking failed: {errorMessage}");
             }
@@ -198,17 +253,26 @@ namespace Tripzo.Repositories
                 .ToListAsync();
         }
 
-        // 5. Cancel a booking: Updates status and includes placeholder for refund logic
-        public async Task<bool> CancelBookingAsync(int bookingId, int userId)
+        // 5. Cancel a booking: Updates status and returns details for email notification
+        public async Task<CancellationResultDTO> CancelBookingAsync(int bookingId, int userId)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
                 // 1. Verify the booking belongs to the user and is currently Confirmed
                 var booking = await _context.Bookings
+                    .Include(b => b.User)
+                    .Include(b => b.Route)
                     .FirstOrDefaultAsync(b => b.BookingId == bookingId && b.UserId == userId);
 
-                if (booking == null || booking.Status != "Confirmed") return false;
+                if (booking == null || booking.Status != "Confirmed")
+                {
+                    return new CancellationResultDTO
+                    {
+                        Success = false,
+                        Message = "Booking not found, already cancelled, or does not belong to you."
+                    };
+                }
 
                 // 2. Update status to 'Cancelled'
                 // This triggers the visibility for the Operator to see a refund is needed
@@ -220,12 +284,27 @@ namespace Tripzo.Repositories
 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
-                return true;
+
+                return new CancellationResultDTO
+                {
+                    Success = true,
+                    Message = "Ticket cancelled successfully. Your refund request has been sent for review.",
+                    BookingId = booking.BookingId,
+                    PassengerName = booking.User?.FullName ?? "Passenger",
+                    PassengerEmail = booking.User?.Email ?? "",
+                    RouteName = $"{booking.Route?.SourceCity} to {booking.Route?.DestCity}",
+                    JourneyDate = booking.JourneyDate,
+                    Amount = booking.TotalAmount
+                };
             }
             catch
             {
                 await transaction.RollbackAsync();
-                return false;
+                return new CancellationResultDTO
+                {
+                    Success = false,
+                    Message = "An error occurred while processing your cancellation request."
+                };
             }
         }
 
