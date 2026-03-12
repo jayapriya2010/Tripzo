@@ -31,11 +31,18 @@ namespace Tripzo.Repositories
         Task<List<BusSchedule>> CreateBusSchedulesAsync(int routeId, int busId, List<DateTime> dates);
         Task<List<BusSchedule>> GetSchedulesByOperatorAsync(int operatorId);
         Task<bool> DeleteScheduleAsync(int scheduleId);
+        Task<ScheduleDeactivationResultDTO> DeactivateScheduleWithCheckAsync(int scheduleId);
+        Task<ReassignBusResultDTO> ReassignBusToScheduleAsync(int scheduleId, int newBusId);
 
         // Feedback Management
         Task<List<OperatorFeedbackDTO>> GetOperatorFeedbacksAsync(int operatorId);
         Task<OperatorFeedbackSummaryDTO> GetOperatorFeedbackSummaryAsync(int operatorId);
         Task<(bool success, string message)> RespondToFeedbackAsync(int operatorId, int feedbackId, string response);
+
+        // Bus Information
+        Task<BusBookingStatusDTO?> GetBusBookingStatusAsync(int busId, int operatorId);
+        Task<List<OperatorBusListDTO>> GetAllBusesWithRoutesAsync(int operatorId);
+        Task<BusDetailDTO?> GetBusDetailAsync(int busId, int operatorId);
 
         Task<OperatorDashboardDTO> GetOperatorDashboardAsync(int operatorId);
     }

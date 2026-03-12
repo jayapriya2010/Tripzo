@@ -310,15 +310,40 @@ namespace Tripzo.Controllers
         }
 
         [HttpDelete("schedule/{scheduleId}")]
-        public async Task<ActionResult> DeleteSchedule(int scheduleId)
+        public async Task<ActionResult<ScheduleDeactivationResultDTO>> DeleteSchedule(int scheduleId)
         {
             if (scheduleId <= 0)
                 return BadRequest(new { message = "Schedule ID must be a positive number." });
 
-            var result = await _fleetRepo.DeleteScheduleAsync(scheduleId);
-            if (!result) return NotFound(new { message = $"Schedule with ID {scheduleId} not found." });
+            var result = await _fleetRepo.DeactivateScheduleWithCheckAsync(scheduleId);
 
-            return Ok(new { message = "Schedule deleted successfully." });
+            if (!result.Success)
+            {
+                if (result.HasActiveBookings)
+                {
+                    return Conflict(result);
+                }
+                return NotFound(new { message = result.Message });
+            }
+
+            return Ok(result);
+        }
+
+        [HttpPut("schedule/reassign")]
+        public async Task<ActionResult<ReassignBusResultDTO>> ReassignBusToSchedule([FromBody] ReassignBusDTO dto)
+        {
+            if (dto.ScheduleId <= 0)
+                return BadRequest(new { message = "Schedule ID must be a positive number." });
+
+            if (dto.NewBusId <= 0)
+                return BadRequest(new { message = "New Bus ID must be a positive number." });
+
+            var result = await _fleetRepo.ReassignBusToScheduleAsync(dto.ScheduleId, dto.NewBusId);
+
+            if (!result.Success)
+                return BadRequest(new { message = result.Message });
+
+            return Ok(result);
         }
 
         // Feedback Management
@@ -373,6 +398,59 @@ namespace Tripzo.Controllers
                 return BadRequest(new { message });
 
             return Ok(new { message });
+        }
+
+        // Bus Information Endpoints
+
+        // 17. Get booking status for a specific bus
+        [HttpGet("buses/{busId}/bookings")]
+        public async Task<ActionResult<BusBookingStatusDTO>> GetBusBookingStatus(int busId, [FromQuery] int operatorId)
+        {
+            if (busId <= 0)
+                return BadRequest(new { message = "Bus ID must be a positive number." });
+
+            if (operatorId <= 0)
+                return BadRequest(new { message = "Operator ID must be a positive number." });
+
+            var result = await _fleetRepo.GetBusBookingStatusAsync(busId, operatorId);
+
+            if (result == null)
+                return NotFound(new { message = $"Bus with ID {busId} not found or does not belong to this operator." });
+
+            return Ok(result);
+        }
+
+        // 18. Get all buses with their routes for an operator
+        [HttpGet("allBuses/{operatorId}")]
+        public async Task<ActionResult<List<OperatorBusListDTO>>> GetAllBusesWithRoutes(int operatorId)
+        {
+            if (operatorId <= 0)
+                return BadRequest(new { message = "Operator ID must be a positive number." });
+
+            var buses = await _fleetRepo.GetAllBusesWithRoutesAsync(operatorId);
+
+            if (buses == null || buses.Count == 0)
+                return NotFound(new { message = $"No buses found for Operator ID {operatorId}." });
+
+            return Ok(buses);
+        }
+
+        // 19. Get detailed information for a specific bus
+        [HttpGet("bus/{busId}")]
+        public async Task<ActionResult<BusDetailDTO>> GetBusDetail(int busId, [FromQuery] int operatorId)
+        {
+            if (busId <= 0)
+                return BadRequest(new { message = "Bus ID must be a positive number." });
+
+            if (operatorId <= 0)
+                return BadRequest(new { message = "Operator ID must be a positive number." });
+
+            var result = await _fleetRepo.GetBusDetailAsync(busId, operatorId);
+
+            if (result == null)
+                return NotFound(new { message = $"Bus with ID {busId} not found or does not belong to this operator." });
+
+            return Ok(result);
         }
     }
 }

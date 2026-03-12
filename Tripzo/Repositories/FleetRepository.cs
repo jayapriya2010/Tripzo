@@ -326,6 +326,207 @@ namespace Tripzo.Repositories
             return true;
         }
 
+        public async Task<ScheduleDeactivationResultDTO> DeactivateScheduleWithCheckAsync(int scheduleId)
+        {
+            var schedule = await _context.BusSchedules
+                .Include(s => s.Bus)
+                .Include(s => s.Route)
+                .FirstOrDefaultAsync(s => s.ScheduleId == scheduleId);
+
+            if (schedule == null)
+            {
+                return new ScheduleDeactivationResultDTO
+                {
+                    Success = false,
+                    Message = $"Schedule with ID {scheduleId} not found."
+                };
+            }
+
+            // Check for active bookings on this schedule's route and date
+            var activeBookingsCount = await _context.Bookings
+                .Include(b => b.BookedSeats)
+                    .ThenInclude(bs => bs.Seat)
+                .Where(b => b.RouteId == schedule.RouteId &&
+                           b.JourneyDate.Date == schedule.ScheduledDate.Date &&
+                           b.Status == "Confirmed" &&
+                           b.BookedSeats.Any(bs => bs.Seat.BusId == schedule.BusId))
+                .CountAsync();
+
+            if (activeBookingsCount > 0)
+            {
+                return new ScheduleDeactivationResultDTO
+                {
+                    Success = false,
+                    Message = $"Cannot deactivate this schedule. There are {activeBookingsCount} active booking(s) for this bus on this day. Please reassign a different bus to this route before deactivating.",
+                    HasActiveBookings = true,
+                    ActiveBookingsCount = activeBookingsCount,
+                    ScheduleId = schedule.ScheduleId,
+                    BusId = schedule.BusId,
+                    BusName = schedule.Bus.BusName,
+                    RouteId = schedule.RouteId,
+                    RouteName = $"{schedule.Route.SourceCity} to {schedule.Route.DestCity}",
+                    ScheduledDate = schedule.ScheduledDate
+                };
+            }
+
+            // No active bookings, proceed with deactivation
+            schedule.IsActive = false;
+            await _context.SaveChangesAsync();
+
+            return new ScheduleDeactivationResultDTO
+            {
+                Success = true,
+                Message = "Schedule deactivated successfully.",
+                HasActiveBookings = false,
+                ActiveBookingsCount = 0,
+                ScheduleId = schedule.ScheduleId,
+                BusId = schedule.BusId,
+                BusName = schedule.Bus.BusName,
+                RouteId = schedule.RouteId,
+                RouteName = $"{schedule.Route.SourceCity} to {schedule.Route.DestCity}",
+                ScheduledDate = schedule.ScheduledDate
+            };
+        }
+
+        public async Task<ReassignBusResultDTO> ReassignBusToScheduleAsync(int scheduleId, int newBusId)
+        {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var schedule = await _context.BusSchedules
+                    .Include(s => s.Bus)
+                    .Include(s => s.Route)
+                    .FirstOrDefaultAsync(s => s.ScheduleId == scheduleId);
+
+                if (schedule == null)
+                {
+                    return new ReassignBusResultDTO
+                    {
+                        Success = false,
+                        Message = $"Schedule with ID {scheduleId} not found."
+                    };
+                }
+
+                var newBus = await _context.Buses
+                    .Include(b => b.SeatConfigs)
+                    .FirstOrDefaultAsync(b => b.BusId == newBusId && b.IsActive);
+
+                if (newBus == null)
+                {
+                    return new ReassignBusResultDTO
+                    {
+                        Success = false,
+                        Message = $"New bus with ID {newBusId} not found or is not active."
+                    };
+                }
+
+                // Verify both buses belong to the same operator
+                if (schedule.Bus.OperatorId != newBus.OperatorId)
+                {
+                    return new ReassignBusResultDTO
+                    {
+                        Success = false,
+                        Message = "Cannot reassign to a bus owned by a different operator."
+                    };
+                }
+
+                // Check if new bus is already scheduled for this route on this date
+                var conflictingSchedule = await _context.BusSchedules
+                    .AnyAsync(s => s.BusId == newBusId &&
+                                  s.RouteId == schedule.RouteId &&
+                                  s.ScheduledDate.Date == schedule.ScheduledDate.Date &&
+                                  s.IsActive &&
+                                  s.ScheduleId != scheduleId);
+
+                if (conflictingSchedule)
+                {
+                    return new ReassignBusResultDTO
+                    {
+                        Success = false,
+                        Message = "The new bus is already scheduled for this route on this date."
+                    };
+                }
+
+                // Get all active bookings for the old bus on this schedule
+                var bookingsToTransfer = await _context.Bookings
+                    .Include(b => b.BookedSeats)
+                        .ThenInclude(bs => bs.Seat)
+                    .Where(b => b.RouteId == schedule.RouteId &&
+                               b.JourneyDate.Date == schedule.ScheduledDate.Date &&
+                               b.Status == "Confirmed" &&
+                               b.BookedSeats.Any(bs => bs.Seat.BusId == schedule.BusId))
+                    .ToListAsync();
+
+                // Get seat mapping from old bus to new bus by seat number
+                var oldBusSeats = await _context.SeatConfigs
+                    .Where(s => s.BusId == schedule.BusId)
+                    .ToDictionaryAsync(s => s.SeatNumber, s => s.SeatId);
+
+                var newBusSeats = await _context.SeatConfigs
+                    .Where(s => s.BusId == newBusId)
+                    .ToDictionaryAsync(s => s.SeatNumber, s => s.SeatId);
+
+                // Check if new bus has all the required seat numbers
+                foreach (var booking in bookingsToTransfer)
+                {
+                    foreach (var bookedSeat in booking.BookedSeats)
+                    {
+                        var seatNumber = bookedSeat.Seat.SeatNumber;
+                        if (!newBusSeats.ContainsKey(seatNumber))
+                        {
+                            return new ReassignBusResultDTO
+                            {
+                                Success = false,
+                                Message = $"New bus does not have seat {seatNumber}. Please ensure the new bus has compatible seat configuration."
+                            };
+                        }
+                    }
+                }
+
+                // Transfer bookings: Update booked seats to point to new bus seats
+                foreach (var booking in bookingsToTransfer)
+                {
+                    foreach (var bookedSeat in booking.BookedSeats)
+                    {
+                        var seatNumber = bookedSeat.Seat.SeatNumber;
+                        bookedSeat.SeatId = newBusSeats[seatNumber];
+                    }
+                }
+
+                var oldBusId = schedule.BusId;
+                var oldBusName = schedule.Bus.BusName;
+
+                // Update the schedule to use the new bus
+                schedule.BusId = newBusId;
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return new ReassignBusResultDTO
+                {
+                    Success = true,
+                    Message = $"Bus reassigned successfully. {bookingsToTransfer.Count} booking(s) transferred to the new bus.",
+                    ScheduleId = schedule.ScheduleId,
+                    OldBusId = oldBusId,
+                    OldBusName = oldBusName,
+                    NewBusId = newBusId,
+                    NewBusName = newBus.BusName,
+                    RouteName = $"{schedule.Route.SourceCity} to {schedule.Route.DestCity}",
+                    ScheduledDate = schedule.ScheduledDate,
+                    BookingsTransferred = bookingsToTransfer.Count
+                };
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return new ReassignBusResultDTO
+                {
+                    Success = false,
+                    Message = $"Failed to reassign bus: {ex.Message}"
+                };
+            }
+        }
+
         // Feedback Management
         public async Task<List<OperatorFeedbackDTO>> GetOperatorFeedbacksAsync(int operatorId)
         {
@@ -396,6 +597,179 @@ namespace Tripzo.Repositories
             feedback.RespondedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
             return (true, "Response submitted successfully.");
+        }
+
+        // Bus Information Methods
+        public async Task<BusBookingStatusDTO?> GetBusBookingStatusAsync(int busId, int operatorId)
+        {
+            var bus = await _context.Buses
+                .Include(b => b.SeatConfigs)
+                .FirstOrDefaultAsync(b => b.BusId == busId && b.OperatorId == operatorId);
+
+            if (bus == null) return null;
+
+            var schedules = await _context.BusSchedules
+                .Include(s => s.Route)
+                .Where(s => s.BusId == busId && s.IsActive)
+                .OrderBy(s => s.ScheduledDate)
+                .ToListAsync();
+
+            var scheduleBookings = new List<ScheduleBookingStatusDTO>();
+
+            foreach (var schedule in schedules)
+            {
+                var bookings = await _context.Bookings
+                    .Include(b => b.BookedSeats)
+                        .ThenInclude(bs => bs.Seat)
+                    .Where(b => b.RouteId == schedule.RouteId &&
+                               b.JourneyDate.Date == schedule.ScheduledDate.Date &&
+                               b.BookedSeats.Any(bs => bs.Seat.BusId == busId))
+                    .ToListAsync();
+
+                var confirmedBookings = bookings.Where(b => b.Status == "Confirmed").ToList();
+                var cancelledBookings = bookings.Where(b => b.Status == "Cancelled" || b.Status == "CancellationApproved").ToList();
+
+                var bookedSeatsCount = confirmedBookings.SelectMany(b => b.BookedSeats).Count();
+
+                scheduleBookings.Add(new ScheduleBookingStatusDTO
+                {
+                    ScheduleId = schedule.ScheduleId,
+                    RouteId = schedule.RouteId,
+                    RouteName = $"{schedule.Route.SourceCity} to {schedule.Route.DestCity}",
+                    ScheduledDate = schedule.ScheduledDate,
+                    TotalSeats = bus.SeatConfigs?.Count ?? 0,
+                    BookedSeats = bookedSeatsCount,
+                    AvailableSeats = (bus.SeatConfigs?.Count ?? 0) - bookedSeatsCount,
+                    CompletedBookings = confirmedBookings.Count,
+                    CancelledBookings = cancelledBookings.Count,
+                    TotalRevenue = confirmedBookings.Sum(b => b.TotalAmount)
+                });
+            }
+
+            return new BusBookingStatusDTO
+            {
+                BusId = bus.BusId,
+                BusName = bus.BusName,
+                BusNumber = bus.BusNumber,
+                TotalCapacity = bus.Capacity,
+                ScheduleBookings = scheduleBookings
+            };
+        }
+
+        public async Task<List<OperatorBusListDTO>> GetAllBusesWithRoutesAsync(int operatorId)
+        {
+            var buses = await _context.Buses
+                .Include(b => b.BusAmenities)
+                    .ThenInclude(ba => ba.Amenity)
+                .Include(b => b.Routes)
+                    .ThenInclude(r => r.RouteStops)
+                .Where(b => b.OperatorId == operatorId)
+                .ToListAsync();
+
+            return buses.Select(b => new OperatorBusListDTO
+            {
+                BusId = b.BusId,
+                BusName = b.BusName,
+                BusNumber = b.BusNumber,
+                BusType = b.BusType,
+                Capacity = b.Capacity,
+                IsActive = b.IsActive,
+                Amenities = b.BusAmenities?.Select(ba => ba.Amenity.AmenityName).ToList() ?? new List<string>(),
+                Routes = b.Routes?.Select(r => new BusRouteDTO
+                {
+                    RouteId = r.RouteId,
+                    SourceCity = r.SourceCity,
+                    DestCity = r.DestCity,
+                    BaseFare = r.BaseFare,
+                    TotalStops = r.RouteStops?.Count ?? 0
+                }).ToList() ?? new List<BusRouteDTO>()
+            }).ToList();
+        }
+
+        public async Task<BusDetailDTO?> GetBusDetailAsync(int busId, int operatorId)
+        {
+            var bus = await _context.Buses
+                .Include(b => b.SeatConfigs)
+                .Include(b => b.BusAmenities)
+                    .ThenInclude(ba => ba.Amenity)
+                .Include(b => b.Routes)
+                    .ThenInclude(r => r.RouteStops)
+                .FirstOrDefaultAsync(b => b.BusId == busId && b.OperatorId == operatorId);
+
+            if (bus == null) return null;
+
+            // Get upcoming schedules with occupancy
+            var upcomingSchedules = await _context.BusSchedules
+                .Include(s => s.Route)
+                .Where(s => s.BusId == busId && s.IsActive && s.ScheduledDate.Date >= DateTime.Today)
+                .OrderBy(s => s.ScheduledDate)
+                .Take(10)
+                .ToListAsync();
+
+            var scheduleOccupancies = new List<ScheduleOccupancyDTO>();
+
+            foreach (var schedule in upcomingSchedules)
+            {
+                var occupiedSeats = await _context.BookedSeats
+                    .Where(bs => bs.Booking.RouteId == schedule.RouteId &&
+                                bs.Booking.JourneyDate.Date == schedule.ScheduledDate.Date &&
+                                bs.Booking.Status == "Confirmed" &&
+                                bs.Seat.BusId == busId)
+                    .CountAsync();
+
+                var totalSeats = bus.SeatConfigs?.Count ?? 0;
+                var availableSeats = totalSeats - occupiedSeats;
+                var occupancyPercentage = totalSeats > 0 ? Math.Round((double)occupiedSeats / totalSeats * 100, 1) : 0;
+
+                scheduleOccupancies.Add(new ScheduleOccupancyDTO
+                {
+                    ScheduleId = schedule.ScheduleId,
+                    RouteName = $"{schedule.Route.SourceCity} to {schedule.Route.DestCity}",
+                    ScheduledDate = schedule.ScheduledDate,
+                    OccupiedSeats = occupiedSeats,
+                    AvailableSeats = availableSeats,
+                    OccupancyPercentage = occupancyPercentage
+                });
+            }
+
+            return new BusDetailDTO
+            {
+                BusId = bus.BusId,
+                BusName = bus.BusName,
+                BusNumber = bus.BusNumber,
+                BusType = bus.BusType,
+                Capacity = bus.Capacity,
+                IsActive = bus.IsActive,
+                Amenities = bus.BusAmenities?.Select(ba => ba.Amenity.AmenityName).ToList() ?? new List<string>(),
+                Seats = bus.SeatConfigs?.Select(s => new BusSeatDetailDTO
+                {
+                    SeatId = s.SeatId,
+                    SeatNumber = s.SeatNumber,
+                    SeatType = s.SeatType,
+                    AddonFare = s.AddonFare
+                }).ToList() ?? new List<BusSeatDetailDTO>(),
+                Routes = bus.Routes?.Select(r => new BusRouteDetailDTO
+                {
+                    RouteId = r.RouteId,
+                    SourceCity = r.SourceCity,
+                    DestCity = r.DestCity,
+                    BaseFare = r.BaseFare,
+                    Stops = r.RouteStops?.OrderBy(rs => rs.StopOrder).Select(rs => new RouteStopDetailDTO
+                    {
+                        StopId = rs.StopId,
+                        CityName = rs.CityName,
+                        LocationName = rs.LocationName,
+                        StopType = rs.StopType,
+                        StopOrder = rs.StopOrder,
+                        ArrivalTime = rs.ArrivalTime
+                    }).ToList() ?? new List<RouteStopDetailDTO>()
+                }).ToList() ?? new List<BusRouteDetailDTO>(),
+                OccupancySummary = new BusOccupancySummaryDTO
+                {
+                    TotalSeats = bus.SeatConfigs?.Count ?? 0,
+                    UpcomingSchedules = scheduleOccupancies
+                }
+            };
         }
     }
 }

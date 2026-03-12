@@ -12,62 +12,368 @@ This guide explains the NUnit testing implementation for the Tripzo Bus Ticket B
 
 ### Packages Used
 
-| Package | Purpose |
-|---------|---------|
-| `NUnit` | Testing framework |
-| `NUnit3TestAdapter` | Visual Studio test runner |
-| `Moq` | Mocking framework |
-| `Microsoft.EntityFrameworkCore.InMemory` | In-memory database for repository tests |
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `NUnit` | 4.3.2 | Testing framework - provides test attributes and assertions |
+| `NUnit3TestAdapter` | 5.0.0 | Integrates NUnit with Visual Studio Test Explorer |
+| `Moq` | 4.20.72 | Mocking framework for creating fake dependencies |
+| `Microsoft.EntityFrameworkCore.InMemory` | 10.0.3 | In-memory database for repository tests |
 
 ### Project Structure
 
 ```
 Tripzo.Tests/
 ├── Helpers/
-│   └── TestDbContextFactory.cs      # Test data setup
-├── Repositories/
-│   ├── AdminRepositoryTests.cs      # 8 tests
-│   ├── BookingRepositoryTests.cs    # 7 tests
-│   └── FleetRepositoryTests.cs      # 6 tests
-├── Controllers/
-│   ├── AdminControllerTests.cs      # 5 tests
-│   └── OperatorControllerTests.cs   # 5 tests
+│   └── TestDbContextFactory.cs      # Creates in-memory DB & seeds test data
+├── Repositories/                     # Tests with REAL database (In-Memory)
+│   ├── AdminRepositoryTests.cs      # 5 tests - Uses NUnit + EF InMemory
+│   ├── BookingRepositoryTests.cs    # 5 tests - Uses NUnit + EF InMemory
+│   └── FleetRepositoryTests.cs      # 6 tests - Uses NUnit + EF InMemory
+├── Controllers/                      # Tests with MOCK dependencies
+│   ├── AdminControllerTests.cs      # 5 tests - Uses NUnit + Moq
+│   └── OperatorControllerTests.cs   # 10 tests - Uses NUnit + Moq
 └── TESTING_GUIDE.md
 ```
 
 ---
 
-## 🎯 Critical Business Logic Covered
+## 🔷 NUnit Framework Explained
 
-### 1. Booking Workflow (7 tests)
-- ✅ Seat availability check after booking
-- ✅ Available seats count calculation
-- ✅ Create booking with atomic payment
-- ✅ Prevent double-booking same seat
-- ✅ Cancel booking and release seats
-- ✅ Prevent cancelling another user's booking
+### What is NUnit?
+NUnit is a unit testing framework for .NET. It provides:
+- **Attributes** to mark test classes and methods
+- **Assertions** to verify expected outcomes
+- **Setup/Teardown** methods for test initialization
 
-### 2. Cancellation/Refund Workflow (8 tests)
-- ✅ Admin approves cancellation → Status = "CancellationApproved"
-- ✅ Admin rejects cancellation → Status = "Confirmed"
-- ✅ Cannot approve non-cancelled bookings
-- ✅ Operator processes refund after admin approval
-- ✅ Cannot refund without admin approval
-- ✅ Cannot refund more than original amount
+### NUnit Attributes Used
 
-### 3. User Management (3 tests)
-- ✅ Exclude admin users from user list
-- ✅ Deactivate passenger/operator accounts
-- ✅ Cannot deactivate admin accounts
+| Attribute | Purpose | Example |
+|-----------|---------|---------|
+| `[TestFixture]` | Marks a class as containing tests | `[TestFixture] public class BookingTests` |
+| `[Test]` | Marks a method as a test case | `[Test] public async Task MyTest()` |
+| `[SetUp]` | Runs BEFORE each test method | Initialize test data |
+| `[TearDown]` | Runs AFTER each test method | Cleanup/dispose resources |
 
-### 4. Seat Configuration (3 tests)
-- ✅ Configure seats within bus capacity
-- ✅ Prevent seats exceeding bus capacity
-- ✅ Prevent duplicate schedules
+### NUnit Assertions Used
 
-### 5. Route Creation (2 tests)
-- ✅ Create route with valid stops
-- ✅ Require minimum 2 stops
+```csharp
+// Basic assertions
+Assert.That(result, Is.True);                    // Check boolean
+Assert.That(result, Is.False);
+Assert.That(value, Is.Null);
+Assert.That(value, Is.Not.Null);
+
+// Equality
+Assert.That(count, Is.EqualTo(5));               // Exact match
+Assert.That(id, Is.GreaterThan(0));              // Comparison
+
+// Collections
+Assert.That(list, Is.Empty);                     // Empty collection
+Assert.That(list.Any(x => x.Role == "Admin"), Is.False);
+
+// Strings
+Assert.That(message, Does.Contain("error"));     // Substring check
+
+// Types
+Assert.That(result, Is.TypeOf<OkObjectResult>()); // Exact type match
+
+// Exceptions
+Assert.ThrowsAsync<ApplicationException>(async () => await Method());
+```
+
+### NUnit in Repository Tests (Example)
+
+```csharp
+[TestFixture]  // ← NUnit: Marks this class as a test container
+public class BookingRepositoryTests
+{
+    private AppDbContext _context;
+    private BookingRepository _bookingRepo;
+
+    [SetUp]  // ← NUnit: Runs before EACH test
+    public void Setup()
+    {
+        // Create fresh in-memory database for isolation
+        _context = TestDbContextFactory.CreateInMemoryContext();
+        TestDbContextFactory.SeedTestData(_context);
+        _bookingRepo = new BookingRepository(_context);
+    }
+
+    [TearDown]  // ← NUnit: Runs after EACH test
+    public void TearDown()
+    {
+        _context.Dispose();  // Cleanup
+    }
+
+    [Test]  // ← NUnit: This is a test method
+    public async Task GetAvailableSeatsCountAsync_ShouldReturnCorrectCount()
+    {
+        // Arrange
+        TestDbContextFactory.CreateTestBooking(_context);
+
+        // Act
+        var count = await _bookingRepo.GetAvailableSeatsCountAsync(1, 1, DateTime.Today.AddDays(1));
+
+        // Assert ← NUnit assertion
+        Assert.That(count, Is.EqualTo(3), "Should have 3 available seats");
+    }
+}
+```
+
+---
+
+## 🔶 Moq Framework Explained
+
+### What is Moq?
+Moq is a mocking library that creates **fake objects** to isolate the code being tested. It's used in **Controller tests** where we don't want to hit the real database.
+
+### Why Use Moq?
+- **Isolation**: Test controller logic without database
+- **Speed**: No database = faster tests
+- **Control**: Define exact behavior of dependencies
+
+### Moq Methods Used
+
+| Method | Purpose | Example |
+|--------|---------|---------|
+| `new Mock<T>()` | Create a mock object | `new Mock<IAdminRepository>()` |
+| `.Setup()` | Define method behavior | `mock.Setup(r => r.Method()).ReturnsAsync(true)` |
+| `.Object` | Get the fake instance | `new Controller(mock.Object)` |
+| `.Verify()` | Ensure method was called | `mock.Verify(r => r.Method(), Times.Once)` |
+| `It.IsAny<T>()` | Match any parameter | `Setup(r => r.Get(It.IsAny<int>()))` |
+| `.ReturnsAsync()` | Return value for async methods | `.ReturnsAsync(true)` |
+
+### Moq in Controller Tests (Example)
+
+```csharp
+[TestFixture]
+public class AdminControllerTests
+{
+    private Mock<IAdminRepository> _mockAdminRepo;  // ← Moq: Fake repository
+    private AdminController _controller;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Create mock object
+        _mockAdminRepo = new Mock<IAdminRepository>();
+
+        // Inject mock into controller (using .Object to get fake instance)
+        _controller = new AdminController(_mockAdminRepo.Object);
+    }
+
+    [Test]
+    public async Task DeactivateUser_WithValidUser_ShouldReturnOk()
+    {
+        // Arrange - Setup mock behavior
+        _mockAdminRepo.Setup(r => r.CheckUserExistsAsync(It.IsAny<int>()))  // ← Moq
+            .ReturnsAsync((true, "Passenger"));  // ← Define return value
+
+        _mockAdminRepo.Setup(r => r.DeactivateUserAsync(It.IsAny<int>()))
+            .ReturnsAsync(true);
+
+        // Act - Call the real controller method
+        var result = await _controller.DeactivateUser(1);
+
+        // Assert - NUnit assertion
+        Assert.That(result, Is.TypeOf<OkObjectResult>());
+    }
+
+    [Test]
+    public async Task ApproveCancellation_WithValidBooking_ShouldReturnOk()
+    {
+        // Arrange
+        _mockAdminRepo.Setup(r => r.ApproveCancellationAsync(It.IsAny<int>()))
+            .ReturnsAsync(true);
+
+        // Act
+        var result = await _controller.ApproveCancellation(1);
+
+        // Assert
+        Assert.That(result, Is.TypeOf<OkObjectResult>());
+
+        // Verify the repository method was called exactly once
+        _mockAdminRepo.Verify(r => r.ApproveCancellationAsync(1), Times.Once);  // ← Moq
+    }
+}
+```
+
+---
+
+## 📊 Test Categories: NUnit vs Moq
+
+| Test Type | Framework Used | Database | Purpose |
+|-----------|----------------|----------|---------|
+| **Repository Tests** | NUnit + EF InMemory | In-Memory DB | Test actual business logic with real queries |
+| **Controller Tests** | NUnit + Moq | None (Mocked) | Test HTTP responses and controller flow |
+
+---
+
+## 📝 Detailed Test Explanations
+
+### 1️⃣ AdminRepositoryTests (5 tests) - Uses NUnit + EF InMemory
+
+| Test | What It Verifies | Business Rule |
+|------|-----------------|---------------|
+| `GetAllUsersAsync_ShouldExcludeAdminUsers` | Admin users are not returned in user list | Security: Admins can't manage other admins |
+| `DeactivateUserAsync_WithValidPassenger_ShouldDeactivate` | Passenger account can be deactivated | Admin can disable user accounts |
+| `DeactivateUserAsync_WithAdminUser_ShouldReturnFalse` | Admin accounts cannot be deactivated | Security: Prevent admin lockout |
+| `ApproveCancellationAsync_WithCancelledBooking_ShouldApprove` | Status changes to "CancellationApproved" | Workflow: Admin must approve refunds |
+| `ApproveCancellationAsync_WithConfirmedBooking_ShouldReturnFalse` | Can't approve a non-cancelled booking | Only cancelled bookings need approval |
+| `RejectCancellationAsync_WithCancelledBooking_ShouldRevertToConfirmed` | Status reverts to "Confirmed" | Rejection restores original booking |
+
+```csharp
+// Example: Testing admin can't be deactivated
+[Test]
+public async Task DeactivateUserAsync_WithAdminUser_ShouldReturnFalse()
+{
+    // Act - Try to deactivate admin (UserId = 1)
+    var result = await _adminRepo.DeactivateUserAsync(1);
+
+    // Assert - Should fail
+    Assert.That(result, Is.False);  // ← NUnit assertion
+}
+```
+
+---
+
+### 2️⃣ BookingRepositoryTests (5 tests) - Uses NUnit + EF InMemory
+
+| Test | What It Verifies | Business Rule |
+|------|-----------------|---------------|
+| `GetSeatLayoutAsync_WithBookedSeats_ShouldShowAsUnavailable` | Booked seats show as unavailable | Real-time seat availability |
+| `GetAvailableSeatsCountAsync_ShouldReturnCorrectCount` | Correct count of available seats | Search results show accurate availability |
+| `CreateBookingAsync_WithValidData_ShouldCreateBookingAndPayment` | Booking + Payment created atomically | Atomic transaction ensures data integrity |
+| `CreateBookingAsync_WithAlreadyBookedSeat_ShouldThrowException` | Double-booking throws exception | Prevent seat conflicts |
+| `CancelBookingAsync_WithConfirmedBooking_ShouldCancelAndReleaseSeats` | Cancellation releases seats | Cancelled seats become available again |
+| `CancelBookingAsync_WithWrongUser_ShouldReturnFalse` | Can't cancel another user's booking | Security: Users can only cancel own bookings |
+
+```csharp
+// Example: Testing double-booking prevention
+[Test]
+public void CreateBookingAsync_WithAlreadyBookedSeat_ShouldThrowException()
+{
+    // Arrange - First booking takes seat 1
+    TestDbContextFactory.CreateTestBooking(_context);
+
+    var booking = new Booking { /* ... */ };
+
+    // Act & Assert - Second booking for seat 1 should throw
+    var ex = Assert.ThrowsAsync<ApplicationException>(async () =>  // ← NUnit
+        await _bookingRepo.CreateBookingAsync(booking, new List<int> { 1 }));
+
+    Assert.That(ex!.Message, Does.Contain("already booked"));  // ← NUnit
+}
+```
+
+---
+
+### 3️⃣ FleetRepositoryTests (6 tests) - Uses NUnit + EF InMemory
+
+| Test | What It Verifies | Business Rule |
+|------|-----------------|---------------|
+| `ConfigureBusSeatsAsync_WithinCapacity_ShouldSucceed` | Seats added within bus capacity | Validate seat configuration |
+| `ConfigureBusSeatsAsync_ExceedingCapacity_ShouldFail` | Reject seats exceeding capacity | Prevent over-configuration |
+| `ProcessRefundAsync_WithApprovedCancellation_ShouldProcessRefund` | Refund processed after admin approval | Operator can only refund approved cancellations |
+| `ProcessRefundAsync_WithNonApprovedStatus_ShouldReturnFalse` | Refund rejected without approval | Admin must approve first |
+| `ProcessRefundAsync_ExceedingOriginalAmount_ShouldReturnFalse` | Refund can't exceed booking amount | Financial integrity |
+| `CreateBusSchedulesAsync_ShouldNotCreateDuplicates` | No duplicate schedules | Prevent schedule conflicts |
+
+```csharp
+// Example: Testing refund workflow
+[Test]
+public async Task ProcessRefundAsync_WithApprovedCancellation_ShouldProcessRefund()
+{
+    // Arrange - Create booking with "CancellationApproved" status
+    var booking = TestDbContextFactory.CreateTestBooking(_context, status: "CancellationApproved");
+
+    // Act
+    var result = await _fleetRepo.ProcessRefundAsync(booking.BookingId, 500);
+
+    // Assert
+    Assert.That(result, Is.True);  // ← NUnit
+
+    var updatedBooking = await _context.Bookings
+        .Include(b => b.Payment)
+        .FirstAsync(b => b.BookingId == booking.BookingId);
+
+    Assert.That(updatedBooking.Status, Is.EqualTo("Refunded"));  // ← NUnit
+    Assert.That(updatedBooking.Payment!.PaymentStatus, Is.EqualTo("Refunded"));
+}
+```
+
+---
+
+### 4️⃣ AdminControllerTests (5 tests) - Uses NUnit + Moq
+
+| Test | What It Verifies | HTTP Response |
+|------|-----------------|---------------|
+| `DeactivateUser_WithValidUser_ShouldReturnOk` | Valid user deactivation returns 200 | `OkObjectResult` |
+| `DeactivateUser_WithNonExistentUser_ShouldReturnNotFound` | Missing user returns 404 | `NotFoundObjectResult` |
+| `ApproveCancellation_WithValidBooking_ShouldReturnOk` | Valid approval returns 200 | `OkObjectResult` |
+| `ApproveCancellation_WithInvalidBooking_ShouldReturnNotFound` | Invalid booking returns 404 | `NotFoundObjectResult` |
+| `RejectCancellation_WithValidBooking_ShouldReturnOk` | Valid rejection returns 200 | `OkObjectResult` |
+
+```csharp
+// Example: Using Moq to test controller
+[Test]
+public async Task ApproveCancellation_WithValidBooking_ShouldReturnOk()
+{
+    // Arrange - Setup mock to return true
+    _mockAdminRepo.Setup(r => r.ApproveCancellationAsync(It.IsAny<int>()))  // ← Moq
+        .ReturnsAsync(true);
+
+    // Act - Call real controller
+    var result = await _controller.ApproveCancellation(1);
+
+    // Assert
+    Assert.That(result, Is.TypeOf<OkObjectResult>());  // ← NUnit
+
+    // Verify mock was called
+    _mockAdminRepo.Verify(r => r.ApproveCancellationAsync(1), Times.Once);  // ← Moq
+}
+```
+
+---
+
+### 5️⃣ OperatorControllerTests (10 tests) - Uses NUnit + Moq
+
+| Test | What It Verifies | HTTP Response |
+|------|-----------------|---------------|
+| `ConfigureSeats_WithValidData_ShouldReturnOk` | Valid seat config returns 200 | `OkObjectResult` |
+| `ConfigureSeats_WhenCapacityExceeded_ShouldReturnBadRequest` | Exceeding capacity returns 400 | `BadRequestObjectResult` |
+| `ProcessRefund_WithValidData_ShouldReturnOk` | Valid refund returns 200 | `OkObjectResult` |
+| `ProcessRefund_WithoutAdminApproval_ShouldReturnNotFound` | Unapproved refund returns 404 | `NotFoundObjectResult` |
+| `ProcessRefund_WithInvalidAmount_ShouldReturnBadRequest` | Zero/negative amount returns 400 | `BadRequestObjectResult` |
+| `CreateRoute_WithValidData_ShouldReturnOk` | Valid route returns 200 | `OkObjectResult` |
+| `CreateRoute_WithInsufficientStops_ShouldReturnBadRequest` | Less than 2 stops returns 400 | `BadRequestObjectResult` |
+
+```csharp
+// Example: Using Moq with AutoMapper
+[Test]
+public async Task ConfigureSeats_WithValidData_ShouldReturnOk()
+{
+    // Arrange
+    var seatDtos = new List<SeatConfigDTO>
+    {
+        new SeatConfigDTO { SeatNumber = "1A", SeatType = "Sleeper", AddonFare = 100 }
+    };
+
+    // Mock AutoMapper
+    _mockMapper.Setup(m => m.Map<SeatConfig>(It.IsAny<SeatConfigDTO>()))  // ← Moq
+        .Returns(new SeatConfig { SeatNumber = "1A" });
+
+    // Mock repository
+    _mockFleetRepo.Setup(r => r.ConfigureBusSeatsAsync(1, It.IsAny<List<SeatConfig>>()))  // ← Moq
+        .ReturnsAsync(SeatConfigResult.Ok());
+
+    // Act
+    var result = await _controller.ConfigureSeats(1, seatDtos);
+
+    // Assert
+    Assert.That(result, Is.TypeOf<OkObjectResult>());  // ← NUnit
+}
+```
 
 ---
 
@@ -88,58 +394,39 @@ dotnet test --verbosity normal
 
 # Run specific test class
 dotnet test --filter "FullyQualifiedName~BookingRepositoryTests"
+
+# Run only repository tests
+dotnet test --filter "Namespace~Repositories"
+
+# Run only controller tests
+dotnet test --filter "Namespace~Controllers"
 ```
 
 ---
 
-## 📝 Test Summary by File
+## 📋 Quick Reference: NUnit vs Moq
 
-| Test File | Tests | Focus Area |
-|-----------|-------|------------|
-| `AdminRepositoryTests` | 8 | User management, cancellation workflow |
-| `BookingRepositoryTests` | 7 | Seat availability, booking, cancellation |
-| `FleetRepositoryTests` | 6 | Seat capacity, refund workflow, schedules |
-| `AdminControllerTests` | 5 | User deactivation, cancellation approval |
-| `OperatorControllerTests` | 5 | Seat config, refund, route creation |
+| Feature | NUnit | Moq |
+|---------|-------|-----|
+| **Purpose** | Test framework | Mocking library |
+| **Creates** | Test structure | Fake objects |
+| **Used for** | Assertions, setup/teardown | Isolating dependencies |
+| **In Repository Tests** | ✅ Yes | ❌ No (uses real DB) |
+| **In Controller Tests** | ✅ Yes | ✅ Yes |
 
----
+### When to Use What
 
-## ✅ Key Test Scenarios
-
-### Booking Creation
-```csharp
-[Test]
-public async Task CreateBookingAsync_WithValidData_ShouldCreateBookingAndPayment()
-{
-    // Verifies atomic booking + payment creation
-}
 ```
+Repository Tests:
+  └── NUnit + EF InMemory Database
+      └── Tests actual database queries
+      └── Tests business logic in repositories
 
-### Seat Conflict Prevention
-```csharp
-[Test]
-public void CreateBookingAsync_WithAlreadyBookedSeat_ShouldThrowException()
-{
-    // Verifies double-booking is prevented
-}
-```
-
-### Refund Workflow
-```csharp
-[Test]
-public async Task ProcessRefundAsync_WithApprovedCancellation_ShouldProcessRefund()
-{
-    // Verifies refund only after admin approval
-}
-```
-
-### Seat Capacity Validation
-```csharp
-[Test]
-public async Task ConfigureBusSeatsAsync_ExceedingCapacity_ShouldFail()
-{
-    // Verifies seats cannot exceed bus capacity
-}
+Controller Tests:
+  └── NUnit + Moq
+      └── Mocks repository interfaces
+      └── Tests HTTP responses
+      └── Tests controller logic only
 ```
 
 ---
