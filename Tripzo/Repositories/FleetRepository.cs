@@ -1,7 +1,8 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Tripzo.Data;
 using Tripzo.DTOs.Operator;
 using Tripzo.Models;
+using Tripzo.DTO.Admin;
 
 namespace Tripzo.Repositories
 {
@@ -15,15 +16,16 @@ namespace Tripzo.Repositories
         }
 
         // 1. Add a new Bus to the system
-        public async Task<bool> AddBusAsync(Bus bus)
+        public async Task<int?> AddBusAsync(Bus bus)
         {
             // Check if bus number already exists
             var exists = await _context.Buses.AnyAsync(b => b.BusNumber == bus.BusNumber);
             if (exists)
-                return false;
+                return null;
 
             _context.Buses.Add(bus);
-            return await _context.SaveChangesAsync() > 0;
+            var saved = await _context.SaveChangesAsync() > 0;
+            return saved ? bus.BusId : null;
         }
 
         // 2. Fetch all buses for a specific Operator (including amenities)
@@ -272,7 +274,8 @@ namespace Tripzo.Repositories
                     PassengerName = booking.User?.FullName ?? "Passenger",
                     PassengerEmail = booking.User?.Email ?? "",
                     RouteName = $"{booking.Route?.SourceCity} to {booking.Route?.DestCity}",
-                    RefundAmount = amount
+                    RefundAmount = amount,
+                    RazorpayPaymentId = booking.Payment.RazorpayPaymentId
                 };
             }
             catch (Exception)
@@ -283,6 +286,19 @@ namespace Tripzo.Repositories
                     Success = false,
                     Message = "An error occurred while processing the refund."
                 };
+            }
+        }
+
+        // 12b. Store Razorpay refund ID after successful refund
+        public async Task UpdatePaymentRefundIdAsync(int bookingId, string razorpayRefundId)
+        {
+            var payment = await _context.Payments
+                .FirstOrDefaultAsync(p => p.BookingId == bookingId);
+
+            if (payment != null)
+            {
+                payment.RazorpayRefundId = razorpayRefundId;
+                await _context.SaveChangesAsync();
             }
         }
 
@@ -305,44 +321,99 @@ namespace Tripzo.Repositories
             };
         }
 
-        public async Task<List<BusSchedule>> CreateBusSchedulesAsync(int routeId, int busId, List<DateTime> dates)
+        public async Task<ScheduleCreationResultDTO> CreateBusSchedulesAsync(int routeId, int busId, List<DateTime> dates)
         {
-            var schedules = new List<BusSchedule>();
-            
-            foreach (var date in dates)
+            // 1. Sort dates to check for consecutive days in the batch
+            var sortedDates = dates.Select(d => d.Date).OrderBy(d => d).ToList();
+            for (int i = 0; i < sortedDates.Count - 1; i++)
             {
-                var exists = await _context.BusSchedules
-                    .AnyAsync(bs => bs.RouteId == routeId && 
-                           bs.BusId == busId && 
-                           bs.ScheduledDate.Date == date.Date);
-                
-                if (!exists)
+                if ((sortedDates[i + 1] - sortedDates[i]).Days == 1)
                 {
-                    schedules.Add(new BusSchedule
+                    return new ScheduleCreationResultDTO
                     {
-                        RouteId = routeId,
-                        BusId = busId,
-                        ScheduledDate = date.Date,
-                        IsActive = true
-                    });
+                        Success = false,
+                        Message = $"Restricted: Cannot schedule the same bus ({busId}) for the same route on consecutive days: {sortedDates[i]:dd MMM} and {sortedDates[i + 1]:dd MMM}."
+                    };
                 }
             }
 
-            if (schedules.Any())
+            foreach (var date in dates)
             {
-                await _context.BusSchedules.AddRangeAsync(schedules);
-                await _context.SaveChangesAsync();
-
-                // Reload with navigation properties
-                var scheduleIds = schedules.Select(s => s.ScheduleId).ToList();
-                schedules = await _context.BusSchedules
+                // 2. Check if the bus is already scheduled for ANY route on this day
+                var existingAnySchedule = await _context.BusSchedules
                     .Include(bs => bs.Route)
-                    .Include(bs => bs.Bus)
-                    .Where(bs => scheduleIds.Contains(bs.ScheduleId))
-                    .ToListAsync();
+                    .FirstOrDefaultAsync(bs => bs.BusId == busId && bs.ScheduledDate.Date == date.Date && bs.IsActive);
+                
+                if (existingAnySchedule != null)
+                {
+                    if (existingAnySchedule.RouteId != routeId)
+                    {
+                        return new ScheduleCreationResultDTO
+                        {
+                            Success = false,
+                            Message = $"Conflict: Bus is already scheduled for a different route ({existingAnySchedule.Route.SourceCity} to {existingAnySchedule.Route.DestCity}) on {date:dd MMM yyyy}."
+                        };
+                    }
+                    else
+                    {
+                         return new ScheduleCreationResultDTO
+                         {
+                             Success = false,
+                             Message = $"Already Scheduled: This bus is already allocated to this route on {date:dd MMM yyyy}."
+                         };
+                    }
+                }
+
+                // 3. Check for consecutive days in existing database schedules (Date - 1 or Date + 1)
+                var consecutiveDaySchedule = await _context.BusSchedules
+                    .FirstOrDefaultAsync(bs => bs.BusId == busId && 
+                                          bs.RouteId == routeId && 
+                                          bs.IsActive &&
+                                          (bs.ScheduledDate.Date == date.Date.AddDays(-1) || bs.ScheduledDate.Date == date.Date.AddDays(1)));
+                
+                if (consecutiveDaySchedule != null)
+                {
+                    return new ScheduleCreationResultDTO
+                    {
+                        Success = false,
+                        Message = $"Maintenance Rule: Same bus cannot run the same route on consecutive days. A schedule already exists for {consecutiveDaySchedule.ScheduledDate:dd MMM yyyy}."
+                    };
+                }
             }
 
-            return schedules;
+            // If all checks pass, create the schedules
+            var newSchedules = dates.Select(date => new BusSchedule
+            {
+                RouteId = routeId,
+                BusId = busId,
+                ScheduledDate = date.Date,
+                IsActive = true
+            }).ToList();
+
+            await _context.BusSchedules.AddRangeAsync(newSchedules);
+            await _context.SaveChangesAsync();
+
+            // Load with navigation properties for the response
+            var scheduleIds = newSchedules.Select(s => s.ScheduleId).ToList();
+            var savedSchedules = await _context.BusSchedules
+                .Include(bs => bs.Route)
+                .Include(bs => bs.Bus)
+                .Where(bs => scheduleIds.Contains(bs.ScheduleId))
+                .ToListAsync();
+
+            return new ScheduleCreationResultDTO
+            {
+                Success = true,
+                Message = "Schedules created successfully.",
+                Schedules = savedSchedules.Select(s => new ScheduleResponseDTO
+                {
+                    ScheduleId = s.ScheduleId,
+                    RouteName = $"{s.Route.SourceCity} to {s.Route.DestCity}",
+                    BusName = s.Bus.BusName,
+                    ScheduledDate = s.ScheduledDate,
+                    IsActive = s.IsActive
+                }).ToList()
+            };
         }
 
         public async Task<List<BusSchedule>> GetSchedulesByOperatorAsync(int operatorId)
@@ -668,6 +739,7 @@ namespace Tripzo.Repositories
             foreach (var schedule in schedules)
             {
                 var bookings = await _context.Bookings
+                    .Include(b => b.User)
                     .Include(b => b.BookedSeats)
                         .ThenInclude(bs => bs.Seat)
                     .Where(b => b.RouteId == schedule.RouteId &&
@@ -677,8 +749,19 @@ namespace Tripzo.Repositories
 
                 var confirmedBookings = bookings.Where(b => b.Status == "Confirmed").ToList();
                 var cancelledBookings = bookings.Where(b => b.Status == "Cancelled" || b.Status == "CancellationApproved").ToList();
-
                 var bookedSeatsCount = confirmedBookings.SelectMany(b => b.BookedSeats).Count();
+
+                var passengerDetails = confirmedBookings.SelectMany(b => 
+                    b.BookedSeats.Select(s => new PassengerBookingDetailDTO
+                    {
+                        BookingId = b.BookingId,
+                        PassengerName = b.User?.FullName ?? "Unknown",
+                        PassengerEmail = b.User?.Email ?? "N/A",
+                        SeatNumber = s.Seat?.SeatNumber ?? "??",
+                        Amount = b.TotalAmount / b.BookedSeats.Count,
+                        Status = b.Status,
+                        BookingDate = b.BookingDate
+                    })).ToList();
 
                 scheduleBookings.Add(new ScheduleBookingStatusDTO
                 {
@@ -691,7 +774,8 @@ namespace Tripzo.Repositories
                     AvailableSeats = (bus.SeatConfigs?.Count ?? 0) - bookedSeatsCount,
                     CompletedBookings = confirmedBookings.Count,
                     CancelledBookings = cancelledBookings.Count,
-                    TotalRevenue = confirmedBookings.Sum(b => b.TotalAmount)
+                    TotalRevenue = confirmedBookings.Sum(b => b.TotalAmount),
+                    PassengerDetails = passengerDetails
                 });
             }
 
@@ -715,23 +799,32 @@ namespace Tripzo.Repositories
                 .Where(b => b.OperatorId == operatorId)
                 .ToListAsync();
 
-            return buses.Select(b => new OperatorBusListDTO
-            {
-                BusId = b.BusId,
-                BusName = b.BusName,
-                BusNumber = b.BusNumber,
-                BusType = b.BusType,
-                Capacity = b.Capacity,
-                IsActive = b.IsActive,
-                Amenities = b.BusAmenities?.Select(ba => ba.Amenity.AmenityName).ToList() ?? new List<string>(),
-                Routes = b.Routes?.Select(r => new BusRouteDTO
+            var feedbacks = await _context.Feedbacks
+                .Where(f => f.Bus.OperatorId == operatorId)
+                .ToListAsync();
+
+            return buses.Select(b => {
+                var busFeedbacks = feedbacks.Where(f => f.BusId == b.BusId).ToList();
+                return new OperatorBusListDTO
                 {
-                    RouteId = r.RouteId,
-                    SourceCity = r.SourceCity,
-                    DestCity = r.DestCity,
-                    BaseFare = r.BaseFare,
-                    TotalStops = r.RouteStops?.Count ?? 0
-                }).ToList() ?? new List<BusRouteDTO>()
+                    BusId = b.BusId,
+                    BusName = b.BusName,
+                    BusNumber = b.BusNumber,
+                    BusType = b.BusType,
+                    Capacity = b.Capacity,
+                    IsActive = b.IsActive,
+                    Amenities = b.BusAmenities?.Select(ba => ba.Amenity.AmenityName).ToList() ?? new List<string>(),
+                    AverageRating = busFeedbacks.Any() ? Math.Round(busFeedbacks.Average(f => f.Rating), 1) : 0,
+                    FeedbackCount = busFeedbacks.Count,
+                    Routes = b.Routes?.Select(r => new BusRouteDTO
+                    {
+                        RouteId = r.RouteId,
+                        SourceCity = r.SourceCity,
+                        DestCity = r.DestCity,
+                        BaseFare = r.BaseFare,
+                        TotalStops = r.RouteStops?.Count ?? 0
+                    }).ToList() ?? new List<BusRouteDTO>()
+                };
             }).ToList();
         }
 
@@ -818,6 +911,71 @@ namespace Tripzo.Repositories
                     TotalSeats = bus.SeatConfigs?.Count ?? 0,
                     UpcomingSchedules = scheduleOccupancies
                 }
+            };
+        }
+
+        public async Task<RouteDetailsDTO?> GetRouteDetailsAsync(int routeId, int operatorId)
+        {
+            var route = await _context.Routes
+                .Include(r => r.Bus)
+                .Include(r => r.RouteStops)
+                .FirstOrDefaultAsync(r => r.RouteId == routeId && r.Bus.OperatorId == operatorId);
+
+            if (route == null) return null;
+
+            return new RouteDetailsDTO
+            {
+                RouteId = route.RouteId,
+                BusName = route.Bus?.BusName ?? "N/A",
+                BusNumber = route.Bus?.BusNumber ?? "N/A",
+                SourceCity = route.SourceCity,
+                DestCity = route.DestCity,
+                BaseFare = route.BaseFare,
+                Stops = route.RouteStops.Select(s => new RouteStopDetailsDTO
+                {
+                    StopId = s.StopId,
+                    CityName = s.CityName,
+                    LocationName = s.LocationName,
+                    StopType = s.StopType,
+                    StopOrder = s.StopOrder,
+                    ArrivalTime = s.ArrivalTime
+                }).OrderBy(s => s.StopOrder).ToList()
+            };
+        }
+
+        public async Task<OperatorRouteDetailDTO?> GetEnhancedRouteDetailsAsync(int routeId, int operatorId)
+        {
+            var route = await _context.Routes
+                .Include(r => r.Bus)
+                .Include(r => r.RouteStops)
+                .FirstOrDefaultAsync(r => r.RouteId == routeId && r.Bus.OperatorId == operatorId);
+
+            if (route == null) return null;
+
+            // Count active bookings for this specific route
+            // Active = Confirmed status and Journey date is today or later
+            var activeBookings = await _context.Bookings
+                .Where(b => b.RouteId == routeId && b.Status == "Confirmed" && b.JourneyDate.Date >= DateTime.Today)
+                .CountAsync();
+
+            return new OperatorRouteDetailDTO
+            {
+                RouteId = route.RouteId,
+                BusName = route.Bus?.BusName ?? "N/A",
+                BusNumber = route.Bus?.BusNumber ?? "N/A",
+                SourceCity = route.SourceCity,
+                DestCity = route.DestCity,
+                BaseFare = route.BaseFare,
+                ActiveBookingsCount = activeBookings,
+                Stops = route.RouteStops.Select(s => new RouteStopDetailsDTO
+                {
+                    StopId = s.StopId,
+                    CityName = s.CityName,
+                    LocationName = s.LocationName,
+                    StopType = s.StopType,
+                    StopOrder = s.StopOrder,
+                    ArrivalTime = s.ArrivalTime
+                }).OrderBy(s => s.StopOrder).ToList()
             };
         }
     }

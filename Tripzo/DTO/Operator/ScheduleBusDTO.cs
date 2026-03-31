@@ -15,4 +15,11 @@ namespace Tripzo.DTOs.Operator
         public DateTime ScheduledDate { get; set; }
         public bool IsActive { get; set; }
     }
+
+    public class ScheduleCreationResultDTO
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public List<ScheduleResponseDTO>? Schedules { get; set; }
+    }
 }

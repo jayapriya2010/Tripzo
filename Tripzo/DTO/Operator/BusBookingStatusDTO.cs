@@ -21,5 +21,17 @@ namespace Tripzo.DTOs.Operator
         public int CompletedBookings { get; set; }
         public int CancelledBookings { get; set; }
         public decimal TotalRevenue { get; set; }
+        public List<PassengerBookingDetailDTO> PassengerDetails { get; set; } = new();
+    }
+
+    public class PassengerBookingDetailDTO
+    {
+        public int BookingId { get; set; }
+        public string PassengerName { get; set; } = string.Empty;
+        public string PassengerEmail { get; set; } = string.Empty;
+        public string SeatNumber { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public DateTime BookingDate { get; set; }
     }
 }

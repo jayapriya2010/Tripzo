@@ -4,9 +4,22 @@
 
 This guide explains the NUnit testing implementation for the Tripzo Bus Ticket Booking System. Tests cover only the **most critical business logic** and workflows.
 
-**Total Tests: 31 | All Passing ✅**
+**Total Tests: 32 | All Passing ✅**
 
 ---
+
+## 🔔 Recent Code & API Changes (affects tests)
+
+During a recent refactor several repository methods and DTOs were updated. Tests were adjusted accordingly. When you modify code or tests, be aware of the following changes:
+
+- `SearchScheduledRoutesAsync(fromCity, toCity, travelDate)` was added to return schedule-aware results (`ScheduledRouteDTO`).
+- `BookingRequestDTO` now includes `busId` (required). When calling the booking endpoint or writing tests, pass the `busId` from the scheduled search result.
+- `CreateBookingAsync` signature changed to: `Task<Booking> CreateBookingAsync(Booking booking, int busId, List<int> seatIds)` — tests must pass `busId`.
+- `CancelBookingAsync` now returns `CancellationResultDTO` (tests should assert on `.Success`).
+- `ApproveCancellationAsync` / `RejectCancellationAsync` now return `CancellationApprovalResultDTO` / `CancellationRejectionResultDTO` respectively — tests should assert on `.Success`.
+- `ProcessRefundAsync` now returns `RefundResultDTO` — tests should assert on `.Success`.
+
+Update tests or mocks to assert on the `.Success` property or to supply the new `busId` parameter where applicable.
 
 ## 🛠️ Testing Setup
 
@@ -26,9 +39,9 @@ Tripzo.Tests/
 ├── Helpers/
 │   └── TestDbContextFactory.cs      # Creates in-memory DB & seeds test data
 ├── Repositories/                     # Tests with REAL database (In-Memory)
-│   ├── AdminRepositoryTests.cs      # 5 tests - Uses NUnit + EF InMemory
-│   ├── BookingRepositoryTests.cs    # 5 tests - Uses NUnit + EF InMemory
-│   └── FleetRepositoryTests.cs      # 6 tests - Uses NUnit + EF InMemory
+│   ├── AdminRepositoryTests.cs      # Repository tests - Uses NUnit + EF InMemory
+│   ├── BookingRepositoryTests.cs    # Repository tests - Uses NUnit + EF InMemory
+│   └── FleetRepositoryTests.cs      # Repository tests - Uses NUnit + EF InMemory
 ├── Controllers/                      # Tests with MOCK dependencies
 │   ├── AdminControllerTests.cs      # 5 tests - Uses NUnit + Moq
 │   └── OperatorControllerTests.cs   # 10 tests - Uses NUnit + Moq

@@ -32,9 +32,9 @@ namespace Tripzo.Mapping
             CreateMap<RouteCreateDTO, RouteModel>();
             CreateMap<StopDTO, RouteStop>();
 
-            // Passenger mappings
+            // Legacy mapping (BookingRequestDTO no longer used with Razorpay flow)
             CreateMap<BookingRequestDTO, Booking>()
-                .ForMember(d => d.TotalAmount, opt => opt.MapFrom(s => s.TotalPaid))
+                .ForMember(d => d.TotalAmount, opt => opt.Ignore())
                 .ForMember(d => d.BookingDate, opt => opt.Ignore())
                 .ForMember(d => d.Status, opt => opt.Ignore())
                 .ForMember(d => d.BookedSeats, opt => opt.Ignore())

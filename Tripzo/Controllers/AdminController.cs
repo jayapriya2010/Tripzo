@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Tripzo.DTO.Admin;
@@ -137,7 +137,8 @@ namespace Tripzo.Controllers
                 JourneyDate = b.JourneyDate,
                 TotalAmount = b.TotalAmount,
                 CancellationDate = b.BookingDate,
-                Status = b.Status
+                Status = b.Status,
+                CancellationReason = b.CancellationReason
             });
 
             return Ok(dtos);
@@ -278,6 +279,14 @@ namespace Tripzo.Controllers
         }
 
         // 10. Manage Master Amenities (Add new features like 'WiFi')
+        [HttpGet("amenities")]
+        public async Task<ActionResult<IEnumerable<object>>> GetAmenities()
+        {
+            var amenities = await _adminRepo.GetAmenityListAsync();
+            var dtos = amenities.Select(a => new { a.AmenityId, a.AmenityName });
+            return Ok(dtos);
+        }
+
         [HttpPost("amenities")]
         public async Task<IActionResult> CreateAmenity([FromBody] CreateAmenityDTO dto)
         {

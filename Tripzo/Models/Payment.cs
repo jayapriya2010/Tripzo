@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace Tripzo.Models
 {
@@ -23,5 +23,15 @@ namespace Tripzo.Models
         [Required]
         [StringLength(50)]
         public string PaymentStatus { get; set; }
+
+        // Razorpay integration fields
+        [StringLength(100)]
+        public string? RazorpayOrderId { get; set; }
+
+        [StringLength(100)]
+        public string? RazorpayPaymentId { get; set; }
+
+        [StringLength(100)]
+        public string? RazorpayRefundId { get; set; }
     }
 }

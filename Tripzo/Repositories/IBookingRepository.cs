@@ -1,4 +1,4 @@
-﻿using Tripzo.Models;
+using Tripzo.Models;
 using Tripzo.DTOs.Passenger;
 
 namespace Tripzo.Repositories
@@ -17,14 +17,20 @@ namespace Tripzo.Repositories
         // Get count of available seats for a bus on a specific date
         Task<int> GetAvailableSeatsCountAsync(int busId, int routeId, DateTime travelDate);
 
+        // Calculate total fare server-side from selected seats
+        Task<decimal> CalculateTotalFareAsync(int routeId, List<int> seatIds);
+
         // Core Booking Transaction (busId is the scheduled bus for that date)
         Task<Booking> CreateBookingAsync(Booking booking, int busId, List<int> seatIds);
+
+        // Razorpay Booking Transaction (includes Razorpay order/payment IDs)
+        Task<Booking> CreateBookingWithRazorpayAsync(Booking booking, int busId, List<int> seatIds, string razorpayOrderId, string razorpayPaymentId);
 
         // Passenger history
         Task<IEnumerable<Booking>> GetPassengerHistoryAsync(int userId);
 
         // Cancel a booking (with refund logic placeholder)
-        Task<CancellationResultDTO> CancelBookingAsync(int bookingId, int userId);
+        Task<CancellationResultDTO> CancelBookingAsync(int bookingId, int userId, string? reason);
 
         // Get booking details for generating ticket PDF
         Task<TicketDTO?> GetBookingDetailsForTicketAsync(int bookingId);

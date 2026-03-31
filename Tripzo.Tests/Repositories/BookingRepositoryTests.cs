@@ -80,7 +80,7 @@ namespace Tripzo.Tests.Repositories
             var seatIds = new List<int> { 3, 4 };
 
             // Act
-            var result = await _bookingRepo.CreateBookingAsync(booking, seatIds);
+            var result = await _bookingRepo.CreateBookingAsync(booking, 1, seatIds);
 
             // Assert
             Assert.That(result.BookingId, Is.GreaterThan(0));
@@ -112,7 +112,7 @@ namespace Tripzo.Tests.Repositories
 
             // Act & Assert - Try to book the same seat
             var ex = Assert.ThrowsAsync<ApplicationException>(async () =>
-                await _bookingRepo.CreateBookingAsync(booking, new List<int> { 1 }));
+                await _bookingRepo.CreateBookingAsync(booking, 1, new List<int> { 1 }));
 
             Assert.That(ex!.Message, Does.Contain("already booked"));
         }
@@ -128,10 +128,10 @@ namespace Tripzo.Tests.Repositories
             var booking = TestDbContextFactory.CreateTestBooking(_context, status: "Confirmed");
 
             // Act
-            var result = await _bookingRepo.CancelBookingAsync(booking.BookingId, 2);
+            var result = await _bookingRepo.CancelBookingAsync(booking.BookingId, 2, null);
 
             // Assert
-            Assert.That(result, Is.True);
+            Assert.That(result.Success, Is.True);
 
             var updatedBooking = await _context.Bookings.FindAsync(booking.BookingId);
             Assert.That(updatedBooking!.Status, Is.EqualTo("Cancelled"));
@@ -148,10 +148,10 @@ namespace Tripzo.Tests.Repositories
             var booking = TestDbContextFactory.CreateTestBooking(_context, userId: 2);
 
             // Act - Try to cancel with different user
-            var result = await _bookingRepo.CancelBookingAsync(booking.BookingId, 3);
+            var result = await _bookingRepo.CancelBookingAsync(booking.BookingId, 3, null);
 
             // Assert
-            Assert.That(result, Is.False, "Cannot cancel another user's booking");
+            Assert.That(result.Success, Is.False, "Cannot cancel another user's booking");
         }
 
         #endregion

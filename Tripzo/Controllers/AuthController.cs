@@ -31,8 +31,12 @@ namespace Tripzo.Controllers
             if (dto == null)
                 return BadRequest("Invalid login request.");
 
-            // Find user by email
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
+            // Trim and lowercase the email for consistent lookup
+            var searchEmail = dto.Email.Trim().ToLower();
+
+            // Find user by email only — role is auto-detected
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == searchEmail);
+
             if (user == null)
                 return Unauthorized("Invalid email or password.");
 
@@ -50,6 +54,7 @@ namespace Tripzo.Controllers
 
             return Ok(new LoginResponseDTO
             {
+                UserId = user.UserId,
                 Token = token,
                 Email = user.Email,
                 Role = user.Role,

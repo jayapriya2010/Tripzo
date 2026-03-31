@@ -11,5 +11,6 @@ namespace Tripzo.DTO.Admin
         public decimal TotalAmount { get; set; }
         public DateTime CancellationDate { get; set; }
         public string Status { get; set; }
+        public string? CancellationReason { get; set; }
     }
 }

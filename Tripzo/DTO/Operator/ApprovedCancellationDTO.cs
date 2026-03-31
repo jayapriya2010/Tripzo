@@ -9,5 +9,6 @@ namespace Tripzo.DTOs.Operator
         public DateTime JourneyDate { get; set; }
         public decimal RefundAmount { get; set; }
         public DateTime CancellationDate { get; set; }
+        public string? CancellationReason { get; set; }
     }
 }

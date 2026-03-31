@@ -14,5 +14,16 @@ namespace Tripzo.DTOs.Passenger
 
         [Required(ErrorMessage = "Travel date is required.")]
         public DateTime TravelDate { get; set; }
+
+        // Pagination
+        public int PageNumber { get; set; } = 1;
+        public int PageSize { get; set; } = 10;
+
+        // Optional filters
+        public string? BusType { get; set; }
+        public decimal? MinFare { get; set; }
+        public decimal? MaxFare { get; set; }
+        // Comma separated amenities, e.g. "WiFi,AC"
+        public string? Amenities { get; set; }
     }
 }

@@ -95,7 +95,7 @@ namespace Tripzo.Tests.Repositories
             var result = await _fleetRepo.ProcessRefundAsync(booking.BookingId, 500);
 
             // Assert
-            Assert.That(result, Is.True);
+            Assert.That(result.Success, Is.True);
 
             var updatedBooking = await _context.Bookings
                 .Include(b => b.Payment)
@@ -115,7 +115,7 @@ namespace Tripzo.Tests.Repositories
             var result = await _fleetRepo.ProcessRefundAsync(booking.BookingId, 500);
 
             // Assert
-            Assert.That(result, Is.False, "Cannot process refund without admin approval");
+            Assert.That(result.Success, Is.False, "Cannot process refund without admin approval");
         }
 
         [Test]
@@ -128,7 +128,7 @@ namespace Tripzo.Tests.Repositories
             var result = await _fleetRepo.ProcessRefundAsync(booking.BookingId, 99999);
 
             // Assert
-            Assert.That(result, Is.False, "Refund cannot exceed original booking amount");
+            Assert.That(result.Success, Is.False, "Refund cannot exceed original booking amount");
         }
 
         #endregion

@@ -1,12 +1,13 @@
-﻿using Tripzo.DTOs.Operator;
+using Tripzo.DTOs.Operator;
 using Tripzo.Models;
+using Tripzo.DTO.Admin;
 
 namespace Tripzo.Repositories
 {
     public interface IFleetRepository
     {
         // Fleet Management
-        Task<bool> AddBusAsync(Bus bus);
+        Task<int?> AddBusAsync(Bus bus);
         Task<IEnumerable<Bus>> GetOperatorFleetAsync(int operatorId);
         Task<bool> UpdateBusStatusAsync(int busId, bool status);
 
@@ -26,9 +27,10 @@ namespace Tripzo.Repositories
         // Refund Management
         Task<IEnumerable<Booking>> GetApprovedCancellationsForOperatorAsync(int operatorId);
         Task<RefundResultDTO> ProcessRefundAsync(int bookingId, decimal amount);
+        Task UpdatePaymentRefundIdAsync(int bookingId, string razorpayRefundId);
 
         // Schedule Management
-        Task<List<BusSchedule>> CreateBusSchedulesAsync(int routeId, int busId, List<DateTime> dates);
+        Task<ScheduleCreationResultDTO> CreateBusSchedulesAsync(int routeId, int busId, List<DateTime> dates);
         Task<List<BusSchedule>> GetSchedulesByOperatorAsync(int operatorId);
         Task<List<BusSchedule>> GetSchedulesByBusIdAsync(int busId, int operatorId);
         Task<bool> DeleteScheduleAsync(int scheduleId);
@@ -46,5 +48,7 @@ namespace Tripzo.Repositories
         Task<BusDetailDTO?> GetBusDetailAsync(int busId, int operatorId);
 
         Task<OperatorDashboardDTO> GetOperatorDashboardAsync(int operatorId);
+        Task<RouteDetailsDTO?> GetRouteDetailsAsync(int routeId, int operatorId);
+        Task<OperatorRouteDetailDTO?> GetEnhancedRouteDetailsAsync(int routeId, int operatorId);
     }
 }

@@ -9,5 +9,6 @@ namespace Tripzo.DTOs.Operator
         public string PassengerEmail { get; set; } = string.Empty;
         public string RouteName { get; set; } = string.Empty;
         public decimal RefundAmount { get; set; }
+        public string? RazorpayPaymentId { get; set; } // For triggering Razorpay refund
     }
 }

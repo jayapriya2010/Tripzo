@@ -1,4 +1,4 @@
-﻿namespace Tripzo.DTOs.Passenger
+namespace Tripzo.DTOs.Passenger
 {
     public class BusSearchResultDTO
     {
@@ -8,6 +8,8 @@
         public string BusType { get; set; } // Sleeper, AC, etc.
         public TimeSpan DepartureTime { get; set; }
         public decimal Fare { get; set; }
+        public List<RouteStopDTO>? BoardingStops { get; set; }
+        public List<RouteStopDTO>? DroppingStops { get; set; }
         public List<string> Amenities { get; set; }
         public int AvailableSeats { get; set; }
         public double? AverageRating { get; set; } // Average rating from feedbacks

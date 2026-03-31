@@ -10,5 +10,8 @@ namespace Tripzo.DTO.Auth
 
         [Required(ErrorMessage = "Password is required")]
         public required string Password { get; set; }
+
+        // Role is now auto-detected from the database
+        public string? Role { get; set; }
     }
 }

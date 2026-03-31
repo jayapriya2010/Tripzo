@@ -76,7 +76,7 @@ namespace Tripzo.Tests.Repositories
             var updatedBooking = await _context.Bookings.FindAsync(booking.BookingId);
 
             // Assert
-            Assert.That(result, Is.True);
+            Assert.That(result.Success, Is.True);
             Assert.That(updatedBooking!.Status, Is.EqualTo("CancellationApproved"));
         }
 
@@ -90,7 +90,7 @@ namespace Tripzo.Tests.Repositories
             var result = await _adminRepo.ApproveCancellationAsync(booking.BookingId);
 
             // Assert
-            Assert.That(result, Is.False);
+            Assert.That(result.Success, Is.False);
         }
 
         [Test]
@@ -104,7 +104,7 @@ namespace Tripzo.Tests.Repositories
             var updatedBooking = await _context.Bookings.FindAsync(booking.BookingId);
 
             // Assert
-            Assert.That(result, Is.True);
+            Assert.That(result.Success, Is.True);
             Assert.That(updatedBooking!.Status, Is.EqualTo("Confirmed"));
         }
 

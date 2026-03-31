@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace Tripzo.Models
 {
@@ -30,6 +30,8 @@ namespace Tripzo.Models
 
         [Required]
         public string Status { get; set; } // "Confirmed", "Cancelled", "CancellationApproved", "Refunded"
+
+        public string? CancellationReason { get; set; }
 
         public virtual ICollection<BookedSeat> BookedSeats { get; set; }
         public virtual Payment Payment { get; set; }

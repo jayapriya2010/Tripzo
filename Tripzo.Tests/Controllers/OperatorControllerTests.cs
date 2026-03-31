@@ -18,6 +18,7 @@ namespace Tripzo.Tests.Controllers
         private Mock<IFleetRepository> _mockFleetRepo;
         private Mock<IMapper> _mockMapper;
         private Mock<IEmailService> _mockEmailService;
+        private Mock<IRazorpayService> _mockRazorpayService;
         private OperatorController _controller;
 
         [SetUp]
@@ -26,7 +27,8 @@ namespace Tripzo.Tests.Controllers
             _mockFleetRepo = new Mock<IFleetRepository>();
             _mockMapper = new Mock<IMapper>();
             _mockEmailService = new Mock<IEmailService>();
-            _controller = new OperatorController(_mockFleetRepo.Object, _mockMapper.Object, _mockEmailService.Object);
+            _mockRazorpayService = new Mock<IRazorpayService>();
+            _controller = new OperatorController(_mockFleetRepo.Object, _mockMapper.Object, _mockEmailService.Object, _mockRazorpayService.Object);
         }
 
         #region Seat Configuration - Critical Tests

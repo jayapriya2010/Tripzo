@@ -10,6 +10,8 @@ namespace Tripzo.DTOs.Operator
         public bool IsActive { get; set; }
         public List<BusRouteDTO> Routes { get; set; } = new();
         public List<string> Amenities { get; set; } = new();
+        public double AverageRating { get; set; }
+        public int FeedbackCount { get; set; }
     }
 
     public class BusRouteDTO

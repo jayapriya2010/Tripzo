@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Tripzo.Models;
 using Tripzo.DTOs.Passenger; // Organized subfolder
@@ -15,15 +15,18 @@ namespace Tripzo.Controllers
         private readonly IBookingRepository _bookingRepo;
         private readonly ITicketPdfService _ticketPdfService;
         private readonly IEmailService _emailService;
+        private readonly IRazorpayService _razorpayService;
 
         public PassengerController(
             IBookingRepository bookingRepo,
             ITicketPdfService ticketPdfService,
-            IEmailService emailService)
+            IEmailService emailService,
+            IRazorpayService razorpayService)
         {
             _bookingRepo = bookingRepo;
             _ticketPdfService = ticketPdfService;
             _emailService = emailService;
+            _razorpayService = razorpayService;
         }
 
         // 1. Search: Finds routes based on origin, destination, and date
@@ -64,7 +67,7 @@ namespace Tripzo.Controllers
                 results.Add(new BusSearchResultDTO
                 {
                     RouteId = sr.RouteId,
-                    BusId = sr.BusId, // This is now the SCHEDULED bus, not route's default
+                    BusId = sr.BusId,
                     BusName = sr.Bus?.BusName,
                     BusType = sr.Bus?.BusType,
                     DepartureTime = sr.Route?.RouteStops?.FirstOrDefault(s => s.StopOrder == 1)?.ArrivalTime ?? TimeSpan.Zero,
@@ -72,11 +75,77 @@ namespace Tripzo.Controllers
                     Amenities = amenities,
                     AvailableSeats = availableSeats,
                     AverageRating = averageRating,
-                    TotalReviews = totalReviews
+                    TotalReviews = totalReviews,
+                    BoardingStops = sr.Route?.RouteStops?
+                        .Where(s => s.StopType == "Boarding")
+                        .Select(s => new RouteStopDTO {
+                            StopId = s.StopId,
+                            CityName = s.CityName,
+                            LocationName = s.LocationName,
+                            ArrivalTime = s.ArrivalTime
+                        }).ToList(),
+                    DroppingStops = sr.Route?.RouteStops?
+                        .Where(s => s.StopType == "Dropping")
+                        .Select(s => new RouteStopDTO {
+                            StopId = s.StopId,
+                            CityName = s.CityName,
+                            LocationName = s.LocationName,
+                            ArrivalTime = s.ArrivalTime
+                        }).ToList()
                 });
             }
 
-            return Ok(results);
+            // Apply optional filters
+            var filtered = results.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(search.BusType))
+            {
+                filtered = filtered.Where(r => string.Equals(r.BusType ?? string.Empty, search.BusType, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (search.MinFare.HasValue)
+            {
+                filtered = filtered.Where(r => r.Fare >= search.MinFare.Value);
+            }
+
+            if (search.MaxFare.HasValue)
+            {
+                filtered = filtered.Where(r => r.Fare <= search.MaxFare.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(search.Amenities))
+            {
+                var wanted = search.Amenities.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(a => a.ToLowerInvariant())
+                    .ToList();
+
+                filtered = filtered.Where(r => wanted.All(w => r.Amenities.Any(a => a != null && a.ToLowerInvariant() == w)));
+            }
+
+            // Pagination
+            var pageNumber = Math.Max(1, search.PageNumber);
+            var pageSize = Math.Clamp(search.PageSize, 1, 50);
+            var totalItems = filtered.Count();
+            var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
+
+            var paged = filtered
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+
+            var response = new
+            {
+                Items = paged,
+                Meta = new
+                {
+                    TotalItems = totalItems,
+                    PageNumber = pageNumber,
+                    PageSize = pageSize,
+                    TotalPages = totalPages
+                }
+            };
+
+            return Ok(response);
         }
 
         // 2. Seat Map: Provides the visual layout with availability
@@ -104,9 +173,9 @@ namespace Tripzo.Controllers
             return Ok(layout);
         }
 
-        // 3. Reservation: Processes multi-seat booking and payment
-        [HttpPost("book")]
-        public async Task<ActionResult<BookingResponseDTO>> CreateReservation([FromBody] BookingRequestDTO request)
+        // 3. Step 1 - Create Razorpay Order: Calculates fare and creates a payment order
+        [HttpPost("create-order")]
+        public async Task<ActionResult<CreateOrderResponseDTO>> CreateOrder([FromBody] CreateOrderRequestDTO request)
         {
             // Validate: Journey date must be from today onwards
             if (request.JourneyDate.Date < DateTime.Today)
@@ -118,6 +187,63 @@ namespace Tripzo.Controllers
 
             try
             {
+                // Calculate the correct total amount server-side from selected seats
+                var calculatedTotal = await _bookingRepo.CalculateTotalFareAsync(request.RouteId, request.SelectedSeatIds);
+
+                if (calculatedTotal <= 0)
+                    return BadRequest(new { message = "Could not calculate fare. Please verify route and seat selections." });
+
+                // Create Razorpay order with the server-calculated amount
+                var receiptId = $"rcpt_{request.RouteId}_{DateTime.Now.Ticks}";
+                var orderResult = await _razorpayService.CreateOrderAsync(calculatedTotal, receiptId);
+
+                if (!orderResult.Success)
+                    return BadRequest(new { message = orderResult.ErrorMessage });
+
+                return Ok(new CreateOrderResponseDTO
+                {
+                    OrderId = orderResult.OrderId!,
+                    Amount = calculatedTotal,
+                    Currency = "INR",
+                    RazorpayKeyId = _razorpayService.GetKeyId()
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Failed to create payment order: {ex.Message}" });
+            }
+        }
+
+        // 4. Step 2 - Verify Payment & Confirm Booking: Validates Razorpay payment and creates the booking
+        [HttpPost("verify-payment")]
+        public async Task<ActionResult<BookingResponseDTO>> VerifyPaymentAndBook([FromBody] VerifyPaymentDTO request)
+        {
+            // Validate: Journey date must be from today onwards
+            if (request.JourneyDate.Date < DateTime.Today)
+                return BadRequest(new { message = "Journey date cannot be in the past." });
+
+            // Validate: Boarding and dropping stops cannot be the same
+            if (request.BoardingStopId == request.DroppingStopId)
+                return BadRequest(new { message = "Boarding and dropping stops cannot be the same." });
+
+            try
+            {
+                // Step 1: Verify the Razorpay payment signature (prevents tampering)
+                var isValid = _razorpayService.VerifyPaymentSignature(
+                    request.RazorpayOrderId,
+                    request.RazorpayPaymentId,
+                    request.RazorpaySignature);
+
+                if (!isValid)
+                    return BadRequest(new { message = "Payment verification failed. Invalid signature." });
+
+                // Step 2: Recalculate total to ensure consistency
+                var calculatedTotal = await _bookingRepo.CalculateTotalFareAsync(request.RouteId, request.SelectedSeatIds);
+
+                if (calculatedTotal <= 0)
+                    return BadRequest(new { message = "Could not calculate fare. Please verify route and seat selections." });
+
+                // Step 3: Create the booking
                 var booking = new Booking
                 {
                     RouteId = request.RouteId,
@@ -125,30 +251,38 @@ namespace Tripzo.Controllers
                     JourneyDate = request.JourneyDate,
                     BoardingStopId = request.BoardingStopId,
                     DroppingStopId = request.DroppingStopId,
-                    TotalAmount = request.TotalPaid,
+                    TotalAmount = calculatedTotal, // Server-calculated amount
                     Status = "Confirmed",
                     BookingDate = DateTime.Now
                 };
 
-                // Uses a Transaction to ensure all seats are booked or none
-                // Pass the BusId from the search result (the scheduled bus for that date)
-                var result = await _bookingRepo.CreateBookingAsync(booking, request.BusId, request.SelectedSeatIds);
+                var result = await _bookingRepo.CreateBookingWithRazorpayAsync(
+                    booking,
+                    request.BusId,
+                    request.SelectedSeatIds,
+                    request.RazorpayOrderId,
+                    request.RazorpayPaymentId);
 
                 if (result == null)
-                {
                     return BadRequest(new { message = "Booking failed. Please check if seats are available and try again." });
-                }
 
-                // Generate and send ticket email
-                var ticketDetails = await _bookingRepo.GetBookingDetailsForTicketAsync(result.BookingId);
-                if (ticketDetails != null)
+                // Generate and send ticket email (don't fail booking if email fails)
+                try
                 {
-                    var pdfBytes = _ticketPdfService.GenerateTicketPdf(ticketDetails);
-                    await _emailService.SendTicketEmailAsync(
-                        ticketDetails.PassengerEmail,
-                        ticketDetails.PassengerName,
-                        pdfBytes,
-                        ticketDetails.BookingId);
+                    var ticketDetails = await _bookingRepo.GetBookingDetailsForTicketAsync(result.BookingId);
+                    if (ticketDetails != null)
+                    {
+                        var pdfBytes = _ticketPdfService.GenerateTicketPdf(ticketDetails);
+                        await _emailService.SendTicketEmailAsync(
+                            ticketDetails.PassengerEmail,
+                            ticketDetails.PassengerName,
+                            pdfBytes,
+                            ticketDetails.BookingId);
+                    }
+                }
+                catch
+                {
+                    // Email failed but booking is confirmed — don't break the response
                 }
 
                 return Ok(new BookingResponseDTO
@@ -161,12 +295,10 @@ namespace Tripzo.Controllers
             }
             catch (ApplicationException ex)
             {
-                // Business logic exceptions with user-friendly messages
                 return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
             {
-                // Log and return detailed error for debugging
                 var errorMessage = ex.InnerException != null
                     ? $"{ex.Message} - Inner: {ex.InnerException.Message}"
                     : ex.Message;
@@ -205,7 +337,7 @@ namespace Tripzo.Controllers
         [HttpPost("cancel")]
         public async Task<IActionResult> CancelTicket([FromBody] CancelBookingDTO request)
         {
-            var result = await _bookingRepo.CancelBookingAsync(request.BookingId, request.UserId);
+            var result = await _bookingRepo.CancelBookingAsync(request.BookingId, request.UserId, request.Reason);
 
             if (!result.Success)
             {

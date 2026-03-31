@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Tripzo.Models;
@@ -41,7 +41,7 @@ namespace Tripzo.Controllers
             var user = new User
             {
                 FullName = dto.FullName,
-                Email = dto.Email,
+                Email = dto.Email.Trim().ToLower(),
                 PhoneNumber = dto.PhoneNumber,
                 Role = dto.Role,
                 Gender = dto.Gender

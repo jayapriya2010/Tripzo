@@ -26,3 +26,12 @@ Thumbs.db
 
 ## ASP.NET / secrets
 appsettings.Development.json
+appsettings.Local.json
+**/appsettings.Development.json
+**/appsettings.Local.json
+
+## Environment files
+.env
+.env.local
+.env.*.local
+*.env

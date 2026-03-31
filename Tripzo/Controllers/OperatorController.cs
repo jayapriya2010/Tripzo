@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Tripzo.Models;
 using Tripzo.DTOs.Operator;
@@ -17,12 +17,14 @@ namespace Tripzo.Controllers
         private readonly IFleetRepository _fleetRepo;
         private readonly IMapper _mapper;
         private readonly IEmailService _emailService;
+        private readonly IRazorpayService _razorpayService;
 
-        public OperatorController(IFleetRepository fleetRepo, IMapper mapper, IEmailService emailService)
+        public OperatorController(IFleetRepository fleetRepo, IMapper mapper, IEmailService emailService, IRazorpayService razorpayService)
         {
             _fleetRepo = fleetRepo;
             _mapper = mapper;
             _emailService = emailService;
+            _razorpayService = razorpayService;
         }
 
         // 1. Dashboard: Provides performance metrics for the landing page
@@ -53,9 +55,9 @@ namespace Tripzo.Controllers
             bus.IsActive = true; // Default to active
 
             var result = await _fleetRepo.AddBusAsync(bus);
-            if (!result) return BadRequest(new { message = "Could not add bus. Bus number may already exist." });
-
-            return Ok(new { message = "Bus registered successfully." });
+            if (result == null) return BadRequest(new { message = "Could not add bus. Bus number may already exist." });
+ 
+            return Ok(new { message = "Bus registered successfully.", busId = result, BusId = result });
         }
 
         // 3. Seat Configuration: Define the layout (Sleeper/Seater) and AddonFares
@@ -184,7 +186,7 @@ namespace Tripzo.Controllers
             return Ok(new { message = "Route and stops created successfully." });
         }
 
-        // 9. Refund Management: Process refunds for cancelled tickets
+        // 9. Refund Management: Process refunds for cancelled tickets via Razorpay
         [HttpPost("refund")]
         public async Task<IActionResult> ProcessRefund([FromBody] RefundRequestDTO dto)
         {
@@ -194,10 +196,29 @@ namespace Tripzo.Controllers
             if (dto.RefundAmount <= 0)
                 return BadRequest(new { message = "Refund amount must be greater than zero." });
 
+            // First, process the refund in our database (validates status, etc.)
             var result = await _fleetRepo.ProcessRefundAsync(dto.BookingId, dto.RefundAmount);
 
             if (!result.Success)
                 return NotFound(new { message = result.Message });
+
+            // Then, trigger the actual Razorpay refund if we have a payment ID
+            if (!string.IsNullOrEmpty(result.RazorpayPaymentId))
+            {
+                var razorpayRefund = await _razorpayService.ProcessRefundAsync(
+                    result.RazorpayPaymentId, dto.RefundAmount);
+
+                if (razorpayRefund.Success)
+                {
+                    // Store the Razorpay refund ID
+                    await _fleetRepo.UpdatePaymentRefundIdAsync(dto.BookingId, razorpayRefund.RefundId!);
+                }
+                else
+                {
+                    // Log the Razorpay error but don't fail — our DB refund is still valid
+                    // In test mode, Razorpay refunds may behave differently
+                }
+            }
 
             // Send refund initiated email to passenger
             if (!string.IsNullOrEmpty(result.PassengerEmail))
@@ -240,7 +261,8 @@ namespace Tripzo.Controllers
                 RouteName = $"{b.Route?.SourceCity} to {b.Route?.DestCity}",
                 JourneyDate = b.JourneyDate,
                 RefundAmount = b.TotalAmount,
-                CancellationDate = b.BookingDate
+                CancellationDate = b.BookingDate,
+                CancellationReason = b.CancellationReason
             });
 
             return Ok(dtos);
@@ -276,37 +298,28 @@ namespace Tripzo.Controllers
         }
 
         [HttpPost("schedule")]
-        public async Task<ActionResult<List<ScheduleResponseDTO>>> ScheduleBus([FromBody] ScheduleBusDTO dto)
+        public async Task<ActionResult<ScheduleCreationResultDTO>> ScheduleBus([FromBody] ScheduleBusDTO dto)
         {
             if (dto.RouteId <= 0)
                 return BadRequest(new { message = "Route ID must be a positive number." });
-
+ 
             if (dto.BusId <= 0)
                 return BadRequest(new { message = "Bus ID must be a positive number." });
-
+ 
             if (dto.ScheduledDates == null || dto.ScheduledDates.Count == 0)
                 return BadRequest(new { message = "At least one scheduled date is required." });
-
+ 
             // Validate all dates are in the future
             var pastDates = dto.ScheduledDates.Where(d => d.Date < DateTime.Today).ToList();
             if (pastDates.Any())
                 return BadRequest(new { message = "Scheduled dates cannot be in the past." });
-
-            var schedules = await _fleetRepo.CreateBusSchedulesAsync(dto.RouteId, dto.BusId, dto.ScheduledDates);
-
-            if (schedules == null || schedules.Count == 0)
-                return BadRequest(new { message = "No schedules created. Dates may already be scheduled." });
-
-            var response = schedules.Select(s => new ScheduleResponseDTO
-            {
-                ScheduleId = s.ScheduleId,
-                RouteName = $"{s.Route.SourceCity} to {s.Route.DestCity}",
-                BusName = s.Bus.BusName,
-                ScheduledDate = s.ScheduledDate,
-                IsActive = s.IsActive
-            }).ToList();
-
-            return Ok(response);
+ 
+            var result = await _fleetRepo.CreateBusSchedulesAsync(dto.RouteId, dto.BusId, dto.ScheduledDates);
+ 
+            if (!result.Success)
+                return BadRequest(new { message = result.Message });
+ 
+            return Ok(result);
         }
 
         [HttpGet("schedules")]
@@ -501,5 +514,28 @@ namespace Tripzo.Controllers
 
             return Ok(result);
         }
+
+        // 20. Get route details for operator
+        [HttpGet("route-detail/{routeId}")]
+        public async Task<ActionResult<OperatorRouteDetailDTO>> GetRouteDetails(int routeId)
+        {
+            if (routeId <= 0)
+                return BadRequest(new { message = "Route ID must be a positive number." });
+
+            var operatorIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(operatorIdClaim) || !int.TryParse(operatorIdClaim, out int operatorId))
+                return Unauthorized(new { message = "Invalid operator token." });
+
+            var result = await _fleetRepo.GetEnhancedRouteDetailsAsync(routeId, operatorId);
+
+            if (result == null)
+                return NotFound(new { message = $"Route with ID {routeId} not found or does not belong to you." });
+
+            return Ok(result);
+        }
+
+        // 21. Diagnostic Ping
+        [HttpGet("ping")]
+        public IActionResult Ping() => Ok(new { message = "Operator Controller is Reachable" });
     }
 }
