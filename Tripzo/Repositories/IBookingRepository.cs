@@ -30,7 +30,7 @@ namespace Tripzo.Repositories
         Task<IEnumerable<Booking>> GetPassengerHistoryAsync(int userId);
 
         // Cancel a booking (with refund logic placeholder)
-        Task<CancellationResultDTO> CancelBookingAsync(int bookingId, int userId, string? reason);
+        Task<CancellationResultDTO> CancelBookingAsync(int bookingId, int userId, string? reason, List<int>? selectedSeatIds = null);
 
         // Get booking details for generating ticket PDF
         Task<TicketDTO?> GetBookingDetailsForTicketAsync(int bookingId);

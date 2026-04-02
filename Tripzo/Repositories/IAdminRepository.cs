@@ -1,4 +1,4 @@
-﻿using Tripzo.DTO.Admin;
+using Tripzo.DTO.Admin;
 using Tripzo.DTOs.Admin;
 using Tripzo.Models;
 
@@ -16,8 +16,8 @@ namespace Tripzo.Repositories
 
         // Cancellation Approval Workflow
         Task<IEnumerable<Booking>> GetPendingCancellationsAsync();
-        Task<CancellationApprovalResultDTO> ApproveCancellationAsync(int bookingId);
-        Task<CancellationRejectionResultDTO> RejectCancellationAsync(int bookingId);
+        Task<CancellationApprovalResultDTO> ApproveCancellationAsync(int bookingId, List<int>? seatIds = null);
+        Task<CancellationRejectionResultDTO> RejectCancellationAsync(int bookingId, List<int>? seatIds = null);
 
         // Route Management
         Task<IEnumerable<Tripzo.Models.Route>> GetAllRoutesAsync();

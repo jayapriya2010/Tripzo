@@ -26,7 +26,7 @@ namespace Tripzo.Repositories
 
         // Refund Management
         Task<IEnumerable<Booking>> GetApprovedCancellationsForOperatorAsync(int operatorId);
-        Task<RefundResultDTO> ProcessRefundAsync(int bookingId, decimal amount);
+        Task<RefundResultDTO> ProcessRefundAsync(int bookingId, decimal amount, List<int>? seatIds = null);
         Task UpdatePaymentRefundIdAsync(int bookingId, string razorpayRefundId);
 
         // Schedule Management
@@ -35,6 +35,7 @@ namespace Tripzo.Repositories
         Task<List<BusSchedule>> GetSchedulesByBusIdAsync(int busId, int operatorId);
         Task<bool> DeleteScheduleAsync(int scheduleId);
         Task<ScheduleDeactivationResultDTO> DeactivateScheduleWithCheckAsync(int scheduleId);
+        Task<ScheduleCreationResultDTO> ReactivateScheduleAsync(int scheduleId);
         Task<ReassignBusResultDTO> ReassignBusToScheduleAsync(int scheduleId, int newBusId);
 
         // Feedback Management

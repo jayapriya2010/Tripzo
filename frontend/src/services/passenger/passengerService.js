@@ -18,8 +18,8 @@ const passengerService = {
   verifyPayment: (payload) => api.post('/Passenger/verify-payment', payload),
 
   // Cancel booking
-  cancelBooking: (bookingId, userId, reason) =>
-    api.post('/Passenger/cancel', { bookingId, userId, reason }),
+  cancelBooking: (bookingId, userId, reason, selectedSeatIds = null) =>
+    api.post('/Passenger/cancel', { bookingId, userId, reason, selectedSeatIds }),
 
   // Submit feedback
   submitFeedback: (payload) => api.post('/Passenger/feedback', payload),

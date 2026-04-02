@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace Tripzo.DTOs.Passenger
 {
@@ -14,5 +14,7 @@ namespace Tripzo.DTOs.Passenger
 
         [StringLength(500, ErrorMessage = "Reason cannot exceed 500 characters.")]
         public string? Reason { get; set; }
+
+        public List<int>? SelectedSeatIds { get; set; }
     }
 }

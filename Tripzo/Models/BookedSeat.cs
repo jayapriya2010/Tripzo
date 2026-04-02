@@ -23,5 +23,12 @@ namespace Tripzo.Models
 
         [StringLength(15)]
         public string PassengerPhone { get; set; } = string.Empty;
+
+        [Required]
+        [StringLength(50)]
+        public string Status { get; set; } = "Confirmed";
+
+        [StringLength(500)]
+        public string? CancellationReason { get; set; }
     }
 }

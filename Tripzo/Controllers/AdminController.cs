@@ -138,7 +138,15 @@ namespace Tripzo.Controllers
                 TotalAmount = b.TotalAmount,
                 CancellationDate = b.BookingDate,
                 Status = b.Status,
-                CancellationReason = b.CancellationReason
+                CancellationReason = b.CancellationReason,
+                BookedSeats = b.BookedSeats?.Select(s => new BookedSeatDetailDTO
+                {
+                    BookedSeatId = s.BookedSeatId,
+                    SeatNumber = s.Seat?.SeatNumber ?? "N/A",
+                    PassengerName = s.PassengerName,
+                    Status = s.Status,
+                    CancellationReason = s.CancellationReason
+                }).ToList()
             });
 
             return Ok(dtos);
@@ -146,12 +154,12 @@ namespace Tripzo.Controllers
 
         // 5. Approve Cancellation Request
         [HttpPut("approve-cancellation/{bookingId}")]
-        public async Task<IActionResult> ApproveCancellation(int bookingId)
+        public async Task<IActionResult> ApproveCancellation(int bookingId, [FromBody] List<int>? seatIds = null)
         {
             if (bookingId <= 0)
                 return BadRequest(new { message = "Booking ID must be a positive number." });
 
-            var result = await _adminRepo.ApproveCancellationAsync(bookingId);
+            var result = await _adminRepo.ApproveCancellationAsync(bookingId, seatIds);
 
             if (!result.Success)
                 return NotFound(new { message = result.Message });
@@ -179,12 +187,12 @@ namespace Tripzo.Controllers
 
         // 6. Reject Cancellation Request
         [HttpPut("reject-cancellation/{bookingId}")]
-        public async Task<IActionResult> RejectCancellation(int bookingId)
+        public async Task<IActionResult> RejectCancellation(int bookingId, [FromBody] List<int>? seatIds = null)
         {
             if (bookingId <= 0)
                 return BadRequest(new { message = "Booking ID must be a positive number." });
 
-            var result = await _adminRepo.RejectCancellationAsync(bookingId);
+            var result = await _adminRepo.RejectCancellationAsync(bookingId, seatIds);
 
             if (!result.Success)
                 return NotFound(new { message = result.Message });

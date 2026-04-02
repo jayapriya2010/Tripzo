@@ -29,6 +29,7 @@ const operatorService = {
   getSchedules: (operatorId) => api.get(`/Operator/schedules?operatorId=${operatorId}`),
   getSchedulesByBus: (busId, operatorId) => api.get(`/Operator/schedules/${busId}?operatorId=${operatorId}`),
   deleteSchedule: (scheduleId) => api.delete(`/Operator/schedule/${scheduleId}`),
+  reactivateSchedule: (scheduleId) => api.post(`/Operator/schedule/reactivate/${scheduleId}`),
 
   // Refunds
   getApprovedCancellations: (operatorId) => api.get(`/Operator/approved-cancellations/${operatorId}`),

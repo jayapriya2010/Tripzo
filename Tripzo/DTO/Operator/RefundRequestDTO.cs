@@ -1,4 +1,4 @@
-﻿namespace Tripzo.DTOs.Operator
+namespace Tripzo.DTOs.Operator
 {
     public class RefundRequestDTO
     {
@@ -6,5 +6,6 @@
         public decimal RefundAmount { get; set; }
         public string RefundReason { get; set; }
         public DateTime RefundProcessedDate { get; set; }
+        public List<int>? SelectedSeatIds { get; set; }
     }
 }

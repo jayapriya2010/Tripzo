@@ -211,8 +211,8 @@ namespace Tripzo.Controllers
             if (dto.RefundAmount <= 0)
                 return BadRequest(new { message = "Refund amount must be greater than zero." });
 
-            // First, process the refund in our database (validates status, etc.)
-            var result = await _fleetRepo.ProcessRefundAsync(dto.BookingId, dto.RefundAmount);
+            // 1. Mark as cancelled in DB first
+            var result = await _fleetRepo.ProcessRefundAsync(dto.BookingId, dto.RefundAmount, dto.SelectedSeatIds);
 
             if (!result.Success)
                 return NotFound(new { message = result.Message });
@@ -275,9 +275,17 @@ namespace Tripzo.Controllers
                 PassengerEmail = b.User?.Email ?? "Unknown",
                 RouteName = $"{b.Route?.SourceCity} to {b.Route?.DestCity}",
                 JourneyDate = b.JourneyDate,
-                RefundAmount = b.TotalAmount,
+                RefundAmount = b.BookedSeats?.Where(s => s.Status == "CancellationApproved").Count() * (b.TotalAmount / (b.BookedSeats?.Count() ?? 1)) ?? 0,
                 CancellationDate = b.BookingDate,
-                CancellationReason = b.CancellationReason
+                CancellationReason = b.CancellationReason,
+                BookedSeats = b.BookedSeats?.Where(s => s.Status == "CancellationApproved").Select(s => new Tripzo.DTO.Admin.BookedSeatDetailDTO
+                {
+                    BookedSeatId = s.BookedSeatId,
+                    SeatNumber = s.Seat?.SeatNumber ?? "N/A",
+                    PassengerName = s.PassengerName,
+                    Status = s.Status,
+                    CancellationReason = s.CancellationReason
+                }).ToList()
             });
 
             return Ok(dtos);
@@ -332,8 +340,29 @@ namespace Tripzo.Controllers
             var result = await _fleetRepo.CreateBusSchedulesAsync(dto.RouteId, dto.BusId, dto.ScheduledDates);
  
             if (!result.Success)
+            {
+                // Return a specific status for inactive conflicts so the UI can prompt for reactivation
+                if (result.IsInactiveConflict)
+                {
+                    return Conflict(result);
+                }
                 return BadRequest(new { message = result.Message });
+            }
  
+            return Ok(result);
+        }
+
+        [HttpPost("schedule/reactivate/{scheduleId}")]
+        public async Task<ActionResult<ScheduleCreationResultDTO>> ReactivateSchedule(int scheduleId)
+        {
+            if (scheduleId <= 0)
+                return BadRequest(new { message = "Schedule ID must be a positive number." });
+
+            var result = await _fleetRepo.ReactivateScheduleAsync(scheduleId);
+
+            if (!result.Success)
+                return BadRequest(new { message = result.Message });
+
             return Ok(result);
         }
 

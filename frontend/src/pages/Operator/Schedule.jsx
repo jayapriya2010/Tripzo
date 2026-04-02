@@ -23,6 +23,7 @@ const Schedule = () => {
   const [allOperatorRoutes, setAllOperatorRoutes] = useState([]);
   const [conflictData, setConflictData] = useState(null);
   const [showConflictModal, setShowConflictModal] = useState(false);
+  const [showReactivateModal, setShowReactivateModal] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => { fetchData(); }, []);
@@ -101,7 +102,12 @@ const Schedule = () => {
       setAvailableRoutes([]);
       fetchData();
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to create schedule.');
+      if (err.response?.status === 409 && err.response?.data?.isInactiveConflict) {
+        setConflictData(err.response.data);
+        setShowReactivateModal(true);
+      } else {
+        setError(err.response?.data?.message || 'Failed to create schedule.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -124,6 +130,24 @@ const Schedule = () => {
       }
     } finally {
       setDeleting(null);
+    }
+  };
+
+  const handleReactivate = async () => {
+    if (!conflictData?.conflictScheduleId) return;
+    setSubmitting(true);
+    try {
+      await operatorService.reactivateSchedule(conflictData.conflictScheduleId);
+      setSuccess('Schedule reactivated successfully!');
+      setShowReactivateModal(false);
+      setFormData({ busId: '', routeId: '' });
+      setSelectedDates([]);
+      fetchData();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to reactivate schedule.');
+      setShowReactivateModal(false);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -279,6 +303,55 @@ const Schedule = () => {
                   </button>
                   <button className="btn btn-light rounded-pill py-2" onClick={() => setShowConflictModal(false)}>
                     Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Reactivate Modal */}
+      {showReactivateModal && (
+        <div className="modal d-block" style={{ backgroundColor: 'rgba(15, 61, 145, 0.4)' }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+              <div className="modal-header border-0 bg-primary text-white p-4">
+                <h5 className="modal-title fw-bold d-flex align-items-center gap-2">
+                  <MdCalendarMonth /> Inactive Schedule Found
+                </h5>
+                <button type="button" className="btn-close btn-close-white" onClick={() => setShowReactivateModal(false)}></button>
+              </div>
+              <div className="modal-body p-4 text-center">
+                <div className="mb-3 text-primary opacity-25">
+                    <MdSchedule size={64} />
+                </div>
+                <p className="fw-bold text-dark fs-5 mb-2">Schedule Already Exists</p>
+                <p className="text-muted mb-4">
+                  An inactive schedule for this route already exists on 
+                  <strong> {new Date(conflictData?.conflictDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</strong>.
+                </p>
+                
+                <div className="d-grid gap-2">
+                  <button 
+                    className="btn btn-primary rounded-pill py-3 fw-bold shadow-sm"
+                    onClick={handleReactivate}
+                    disabled={submitting}
+                  >
+                    {submitting ? <span className="spinner-border spinner-border-sm me-2"></span> : null}
+                    Yes, Activate Existing Run
+                  </button>
+                  <button 
+                    className="btn btn-light rounded-pill py-2 text-muted fw-semibold" 
+                    onClick={() => {
+                      if (conflictData?.conflictDate) {
+                        const dateStr = new Date(conflictData.conflictDate).toISOString().split('T')[0];
+                        setSelectedDates(prev => prev.filter(d => d !== dateStr));
+                      }
+                      setShowReactivateModal(false);
+                    }}
+                  >
+                    Try Another Date
                   </button>
                 </div>
               </div>

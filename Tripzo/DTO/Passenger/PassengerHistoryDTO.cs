@@ -1,4 +1,4 @@
-﻿namespace Tripzo.DTOs.Passenger
+namespace Tripzo.DTOs.Passenger
 {
     public class PassengerHistoryDTO
     {
@@ -8,5 +8,6 @@
         public DateTime JourneyDate { get; set; }
         public string Status { get; set; } // Confirmed, Cancelled, Refunded
         public decimal Amount { get; set; }
+        public List<Tripzo.DTO.Admin.BookedSeatDetailDTO>? BookedSeats { get; set; }
     }
 }

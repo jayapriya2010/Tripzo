@@ -95,7 +95,7 @@ namespace Tripzo.Repositories
             var occupiedSeatIds = await _context.BookedSeats
                 .Where(bs => bs.Booking.RouteId == routeId &&
                              bs.Booking.JourneyDate.Date == travelDate.Date &&
-                             bs.Booking.Status == "Confirmed")
+                             bs.Status != "Cancelled")
                 .Select(bs => bs.SeatId)
                 .ToListAsync();
 
@@ -118,13 +118,12 @@ namespace Tripzo.Repositories
                 .CountAsync();
 
             // Get booked seats for this route and date
-            var bookedSeatsCount = await _context.BookedSeats
-                .Where(bs => bs.Booking.RouteId == routeId &&
-                             bs.Booking.JourneyDate.Date == travelDate.Date &&
-                             bs.Booking.Status == "Confirmed")
-                .CountAsync();
+            var occupiedCount = await _context.BookedSeats
+                .CountAsync(bs => bs.Booking.RouteId == routeId &&
+                                  bs.Booking.JourneyDate.Date == travelDate.Date &&
+                                  bs.Status != "Cancelled");
 
-            return totalSeats - bookedSeatsCount;
+            return totalSeats - occupiedCount;
         }
 
         // 2b. Calculate total fare server-side from selected seats
@@ -412,6 +411,7 @@ namespace Tripzo.Repositories
                 .Include(b => b.Route)
                     .ThenInclude(r => r.Bus)
                 .Include(b => b.BookedSeats)
+                    .ThenInclude(s => s.Seat)
                 .Where(b => b.UserId == userId)
                 .OrderByDescending(b => b.JourneyDate)
                 .ToListAsync();
@@ -446,47 +446,100 @@ namespace Tripzo.Repositories
         }
 
         // 5. Cancel a booking: Updates status and returns details for email notification
-        public async Task<CancellationResultDTO> CancelBookingAsync(int bookingId, int userId, string? reason)
+        public async Task<CancellationResultDTO> CancelBookingAsync(int bookingId, int userId, string? reason, List<int>? selectedSeatIds = null)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // 1. Verify the booking belongs to the user and is currently Confirmed
+                // 1. Verify the booking belongs to the user and is in a valid state for cancellation
                 var booking = await _context.Bookings
                     .Include(b => b.User)
                     .Include(b => b.Route)
+                    .Include(b => b.BookedSeats)
                     .FirstOrDefaultAsync(b => b.BookingId == bookingId && b.UserId == userId);
 
-                if (booking == null || booking.Status != "Confirmed")
+                var allowedStatuses = new[] { "Confirmed", "PartiallyCancelled" };
+                if (booking == null || !allowedStatuses.Contains(booking.Status))
                 {
                     return new CancellationResultDTO
                     {
                         Success = false,
-                        Message = "Booking not found, already cancelled, or does not belong to you."
+                        Message = "Booking not found, not in a cancellable state, or does not belong to you."
                     };
                 }
 
-                // 2. Update status and save reason
-                booking.Status = "Cancelled";
-                booking.CancellationReason = reason;
+                // 2. Identify seats to cancel
+                List<BookedSeat> seatsToCancel;
+                bool isFullCancellation = false;
 
-                // 3. Release the seats so they appear available in Search
-                var bookedSeats = _context.BookedSeats.Where(bs => bs.BookingId == bookingId);
-                _context.BookedSeats.RemoveRange(bookedSeats);
+                if (selectedSeatIds == null || !selectedSeatIds.Any())
+                {
+                    // Full cancellation requested (Legacy/Default behavior)
+                    seatsToCancel = booking.BookedSeats.Where(s => s.Status == "Confirmed").ToList();
+                    isFullCancellation = true;
+                }
+                else
+                {
+                    // Selective cancellation
+                    seatsToCancel = booking.BookedSeats
+                        .Where(s => selectedSeatIds.Contains(s.BookedSeatId) && s.Status == "Confirmed")
+                        .ToList();
+
+                    if (seatsToCancel.Count == 0)
+                    {
+                        return new CancellationResultDTO
+                        {
+                            Success = false,
+                            Message = "No valid confirmed seats found for the requested cancellation."
+                        };
+                    }
+
+                    // Check if this results in all remaining active seats being cancelled
+                    var remainingActiveCount = booking.BookedSeats.Count(s => s.Status == "Confirmed");
+                    if (seatsToCancel.Count == remainingActiveCount)
+                    {
+                        isFullCancellation = true;
+                    }
+                }
+
+                // 3. Mark selected seats as CancellationPending
+                foreach (var seat in seatsToCancel)
+                {
+                    seat.Status = "CancellationPending";
+                    seat.CancellationReason = reason;
+                }
+
+                // 4. Update overall booking status
+                if (isFullCancellation)
+                {
+                    booking.Status = "Cancelled";
+                }
+                else
+                {
+                    booking.Status = "PartiallyCancelled";
+                }
+                
+                // Keep the last reason at booking level for legacy compatibility
+                booking.CancellationReason = reason;
 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
+                // Calculate amount for the seats being cancelled (approximate if simple fare)
+                decimal refundEstimate = (booking.TotalAmount / booking.BookedSeats.Count) * seatsToCancel.Count;
+
                 return new CancellationResultDTO
                 {
                     Success = true,
-                    Message = "Ticket cancelled successfully. Your refund request has been sent for review.",
+                    Message = isFullCancellation ? 
+                        "Full cancellation request sent for review." : 
+                        $"Partial cancellation request for {seatsToCancel.Count} seat(s) sent for review.",
                     BookingId = booking.BookingId,
                     PassengerName = booking.User?.FullName ?? "Passenger",
                     PassengerEmail = booking.User?.Email ?? "",
                     RouteName = $"{booking.Route?.SourceCity} to {booking.Route?.DestCity}",
                     JourneyDate = booking.JourneyDate,
-                    Amount = booking.TotalAmount
+                    Amount = refundEstimate
                 };
             }
             catch
@@ -524,6 +577,8 @@ namespace Tripzo.Repositories
 
             var effectiveBus = schedule?.Bus ?? booking.Route?.Bus;
 
+            var confirmedSeats = booking.BookedSeats?.Where(s => s.Status == "Confirmed").ToList() ?? [];
+
             return new TicketDTO
             {
                 BookingId = booking.BookingId,
@@ -541,17 +596,17 @@ namespace Tripzo.Repositories
                 ArrivalDateTime = booking.JourneyDate.Date
                     .AddDays(booking.DroppingStop?.DayOffset ?? 0)
                     .Add(booking.DroppingStop?.ArrivalTime ?? TimeSpan.Zero),
-                SeatNumbers = booking.BookedSeats?.Select(bs => bs.Seat?.SeatNumber ?? "").ToList() ?? [],
+                SeatNumbers = confirmedSeats.Select(bs => bs.Seat?.SeatNumber ?? "").ToList(),
                 TotalAmount = booking.TotalAmount,
                 BookingDate = booking.BookingDate,
-                Passengers = booking.BookedSeats?.Select(bs => new PassengerDetailDTO
+                Passengers = confirmedSeats.Select(bs => new PassengerDetailDTO
                 {
                     SeatId = bs.SeatId,
                     Name = bs.PassengerName,
                     Age = bs.PassengerAge,
                     Gender = bs.Gender,
                     Phone = bs.PassengerPhone
-                }).ToList() ?? []
+                }).ToList()
             };
         }
 

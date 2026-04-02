@@ -73,7 +73,8 @@ const Refunds = () => {
         bookingId: selectedBooking.bookingId,
         refundAmount: amount,
         refundReason: 'Admin approved cancellation refund',
-        refundProcessedDate: new Date().toISOString()
+        refundProcessedDate: new Date().toISOString(),
+        selectedSeatIds: selectedBooking.bookedSeats?.map(s => s.bookedSeatId) || []
       });
 
       setRefundState('success');
@@ -244,6 +245,16 @@ const Refunds = () => {
                     {/* Booking Summary */}
                     <div className="bg-light rounded-3 p-3 mb-3 border">
                       <div className="row g-2">
+                        <div className="col-12 mb-2">
+                          <p className="text-muted mb-1 fw-bold" style={{ fontSize: '0.7rem' }}>SEATS FOR REFUND</p>
+                          <div className="d-flex flex-wrap gap-2 text-dark">
+                            {selectedBooking.bookedSeats?.map(s => (
+                              <span key={s.bookedSeatId} className="badge bg-white text-dark border fw-bold">
+                                {s.seatNumber}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
                         <div className="col-6">
                           <p className="text-muted mb-0 fw-bold" style={{ fontSize: '0.7rem' }}>PASSENGER</p>
                           <p className="fw-bold m-0 small">{selectedBooking.passengerName}</p>
@@ -273,12 +284,12 @@ const Refunds = () => {
 
                     {/* Refund Amount Input */}
                     <div className="mb-3">
-                      <label className="form-label fw-bold small text-muted">REFUND AMOUNT (₹)</label>
+                      <label className="form-label fw-bold small text-muted uppercase-text">REFUND AMOUNT (₹)</label>
                       <div className="input-group">
-                        <span className="input-group-text fw-bold fs-5 bg-light">₹</span>
+                        <span className="input-group-text fw-bold fs-5 bg-light border-2">₹</span>
                         <input
                           type="number"
-                          className="form-control rounded-end-3 fw-bold fs-5 text-primary bg-light"
+                          className="form-control rounded-end-3 fw-bold fs-5 text-primary bg-light border-2 shadow-none"
                           value={refundAmount}
                           onChange={e => setRefundAmount(e.target.value)}
                           min="1"
@@ -286,7 +297,7 @@ const Refunds = () => {
                           disabled={refundState === 'processing'}
                         />
                       </div>
-                      <small className="text-muted">Original booking amount: ₹{selectedBooking.refundAmount}</small>
+                      <small className="text-muted">Calculated refund for {selectedBooking.bookedSeats?.length || 0} seat(s): ₹{selectedBooking.refundAmount.toFixed(2)}</small>
                     </div>
 
                     {refundMessage && refundState !== 'error' && (
@@ -294,10 +305,10 @@ const Refunds = () => {
                     )}
 
                     {/* Warning Banner */}
-                    <div className="alert border-0 shadow-sm d-flex align-items-start gap-2 mb-3 rounded-3" style={{ background: '#FFF7ED' }}>
+                    <div className="alert border-0 shadow-sm d-flex align-items-start gap-2 mb-3 rounded-4" style={{ background: '#FFF7ED' }}>
                       <MdWarning size={18} color="#F59E0B" className="flex-shrink-0 mt-1" />
                       <small className="fw-semibold" style={{ color: '#92400E' }}>
-                        This will call the <strong>Razorpay Refund API</strong> (test mode) using the original payment ID. This action cannot be undone.
+                        This will call the <strong>Razorpay Refund API</strong> (test mode). Action cannot be undone. Seats will be released.
                       </small>
                     </div>
                   </>

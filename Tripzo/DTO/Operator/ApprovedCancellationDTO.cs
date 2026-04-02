@@ -10,5 +10,6 @@ namespace Tripzo.DTOs.Operator
         public decimal RefundAmount { get; set; }
         public DateTime CancellationDate { get; set; }
         public string? CancellationReason { get; set; }
+        public List<Tripzo.DTO.Admin.BookedSeatDetailDTO>? BookedSeats { get; set; }
     }
 }

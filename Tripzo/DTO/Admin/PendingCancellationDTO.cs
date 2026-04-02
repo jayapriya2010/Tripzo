@@ -12,5 +12,15 @@ namespace Tripzo.DTO.Admin
         public DateTime CancellationDate { get; set; }
         public string Status { get; set; }
         public string? CancellationReason { get; set; }
+        public List<BookedSeatDetailDTO>? BookedSeats { get; set; }
+    }
+
+    public class BookedSeatDetailDTO
+    {
+        public int BookedSeatId { get; set; }
+        public string SeatNumber { get; set; } = string.Empty;
+        public string PassengerName { get; set; } = string.Empty;
+        public string Status { get; set; } = "Confirmed";
+        public string? CancellationReason { get; set; }
     }
 }

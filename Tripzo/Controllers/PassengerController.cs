@@ -330,7 +330,15 @@ namespace Tripzo.Controllers
                 BusNumber = h.Route?.Bus?.BusNumber,
                 JourneyDate = h.JourneyDate,
                 Status = h.Status,
-                Amount = h.TotalAmount
+                Amount = h.TotalAmount,
+                BookedSeats = h.BookedSeats?.Select(s => new Tripzo.DTO.Admin.BookedSeatDetailDTO
+                {
+                    BookedSeatId = s.BookedSeatId,
+                    SeatNumber = s.Seat?.SeatNumber ?? "N/A",
+                    PassengerName = s.PassengerName,
+                    Status = s.Status,
+                    CancellationReason = s.CancellationReason
+                }).ToList()
             });
 
             return Ok(historyDtos);
@@ -340,7 +348,8 @@ namespace Tripzo.Controllers
         [HttpPost("cancel")]
         public async Task<IActionResult> CancelTicket([FromBody] CancelBookingDTO request)
         {
-            var result = await _bookingRepo.CancelBookingAsync(request.BookingId, request.UserId, request.Reason);
+            // 3. Initiate cancellation
+            var result = await _bookingRepo.CancelBookingAsync(request.BookingId, request.UserId, request.Reason, request.SelectedSeatIds);
 
             if (!result.Success)
             {

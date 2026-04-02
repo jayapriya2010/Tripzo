@@ -139,7 +139,7 @@ public class EmailService : IEmailService
         var email = new MimeMessage();
         email.From.Add(new MailboxAddress(
             _config["Email:SenderName"] ?? "Tripzo",
-            _config["Email:SenderEmail"]));
+            _config["Email:SenderEmail"] ?? "no-reply@tripzo.com"));
         email.To.Add(new MailboxAddress(passengerName, toEmail));
         email.Subject = $"Cancellation Request Rejected - Booking #{bookingId}";
 
@@ -196,7 +196,7 @@ public class EmailService : IEmailService
         var email = new MimeMessage();
         email.From.Add(new MailboxAddress(
             _config["Email:SenderName"] ?? "Tripzo",
-            _config["Email:SenderEmail"]));
+            _config["Email:SenderEmail"] ?? "no-reply@tripzo.com"));
         email.To.Add(new MailboxAddress(passengerName, toEmail));
         email.Subject = $"Refund Initiated - Booking #{bookingId}";
 
@@ -244,7 +244,7 @@ public class EmailService : IEmailService
         var email = new MimeMessage();
         email.From.Add(new MailboxAddress(
             _config["Email:SenderName"] ?? "Tripzo",
-            _config["Email:SenderEmail"]));
+            _config["Email:SenderEmail"] ?? "no-reply@tripzo.com"));
         email.To.Add(new MailboxAddress(passengerName, toEmail));
         email.Subject = $"Schedule Update: New Bus Assigned - Booking #{bookingId}";
 
@@ -290,7 +290,7 @@ public class EmailService : IEmailService
         var email = new MimeMessage();
         email.From.Add(new MailboxAddress(
             _config["Email:SenderName"] ?? "Tripzo",
-            _config["Email:SenderEmail"]));
+            _config["Email:SenderEmail"] ?? "no-reply@tripzo.com"));
         email.To.Add(new MailboxAddress(userName, toEmail));
         email.Subject = "Your Tripzo Verification Code";
 

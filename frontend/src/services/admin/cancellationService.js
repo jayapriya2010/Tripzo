@@ -6,13 +6,13 @@ const cancellationService = {
         return response.data;
     },
     
-    approveCancellation: async (bookingId) => {
-        const response = await api.put(`/Admin/approve-cancellation/${bookingId}`);
+    approveCancellation: async (bookingId, seatIds = null) => {
+        const response = await api.put(`/Admin/approve-cancellation/${bookingId}`, seatIds);
         return response.data;
     },
     
-    rejectCancellation: async (bookingId) => {
-        const response = await api.put(`/Admin/reject-cancellation/${bookingId}`);
+    rejectCancellation: async (bookingId, seatIds = null) => {
+        const response = await api.put(`/Admin/reject-cancellation/${bookingId}`, seatIds);
         return response.data;
     }
 };

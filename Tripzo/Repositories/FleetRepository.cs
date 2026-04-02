@@ -210,7 +210,7 @@ namespace Tripzo.Repositories
                 await transaction.CommitAsync();
                 return true;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 await transaction.RollbackAsync();
                 // We should ideally bubble up the specific error message, but keeping API signature for now
@@ -228,20 +228,21 @@ namespace Tripzo.Repositories
                 .ToListAsync();
         }
 
-        // 11. Get approved cancellations for operator's buses
+        // 11. View all approved cancellations for this operator
         public async Task<IEnumerable<Booking>> GetApprovedCancellationsForOperatorAsync(int operatorId)
         {
             return await _context.Bookings
                 .Include(b => b.User)
                 .Include(b => b.Route)
                     .ThenInclude(r => r.Bus)
-                .Where(b => b.Status == "CancellationApproved" && b.Route.Bus.OperatorId == operatorId)
+                .Include(b => b.BookedSeats)
+                .Where(b => b.BookedSeats.Any(s => s.Status == "CancellationApproved") && b.Route.Bus.OperatorId == operatorId)
                 .OrderBy(b => b.BookingDate)
                 .ToListAsync();
         }
 
         // 12. Process a refund for a cancelled booking
-        public async Task<RefundResultDTO> ProcessRefundAsync(int bookingId, decimal amount)
+        public async Task<RefundResultDTO> ProcessRefundAsync(int bookingId, decimal amount, List<int>? seatIds = null)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
@@ -251,15 +252,25 @@ namespace Tripzo.Repositories
                     .Include(b => b.Payment)
                     .Include(b => b.User)
                     .Include(b => b.Route)
+                    .Include(b => b.BookedSeats)
                     .FirstOrDefaultAsync(b => b.BookingId == bookingId);
 
-                // 2. Strict Validation: Must be approved by admin
-                if (booking == null || booking.Status != "CancellationApproved")
+                // 2. Strict Validation
+                if (booking == null)
+                {
+                    return new RefundResultDTO { Success = false, Message = "Booking not found." };
+                }
+
+                var seatsToRefund = booking.BookedSeats
+                    .Where(s => s.Status == "CancellationApproved" && (seatIds == null || seatIds.Contains(s.BookedSeatId)))
+                    .ToList();
+
+                if (!seatsToRefund.Any())
                 {
                     return new RefundResultDTO
                     {
                         Success = false,
-                        Message = "Booking not found or not approved for refund."
+                        Message = "Booking not found or no seats approved for refund."
                     };
                 }
 
@@ -281,8 +292,14 @@ namespace Tripzo.Repositories
                     };
                 }
 
-                // 3. Update status to Refunded
-                booking.Status = "Refunded";
+                // 3. Update Individual Seat Statuses and Overall Booking Status
+                foreach (var seat in seatsToRefund)
+                {
+                    seat.Status = "Cancelled";
+                }
+
+                bool allSeatsCancelled = booking.BookedSeats.All(s => s.Status == "Cancelled");
+                booking.Status = allSeatsCancelled ? "Cancelled" : "PartiallyCancelled";
 
                 // 4. Update the existing Payment record to reflect refund
                 booking.Payment.PaymentStatus = "Refunded";
@@ -742,12 +759,14 @@ namespace Tripzo.Repositories
                                b.BookedSeats.Any(bs => bs.Seat.BusId == busId))
                     .ToListAsync();
 
-                var confirmedBookings = bookings.Where(b => b.Status == "Confirmed").ToList();
+                var activeBookings = bookings.Where(b => b.Status == "Confirmed" || b.Status == "PartiallyCancelled").ToList();
                 var cancelledBookings = bookings.Where(b => b.Status == "Cancelled" || b.Status == "CancellationApproved").ToList();
-                var bookedSeatsCount = confirmedBookings.SelectMany(b => b.BookedSeats).Count();
+                
+                var activeSeats = activeBookings.SelectMany(b => b.BookedSeats.Where(s => s.Status == "Confirmed")).ToList();
+                var bookedSeatsCount = activeSeats.Count;
 
-                var passengerDetails = confirmedBookings.SelectMany(b => 
-                    b.BookedSeats.Select(s => new PassengerBookingDetailDTO
+                var passengerDetails = activeBookings.SelectMany(b => 
+                    b.BookedSeats.Where(s => s.Status == "Confirmed").Select(s => new PassengerBookingDetailDTO
                     {
                         BookingId = b.BookingId,
                         PassengerName = s.PassengerName ?? b.User?.FullName ?? "Unknown",
@@ -771,9 +790,9 @@ namespace Tripzo.Repositories
                     TotalSeats = bus.SeatConfigs?.Count ?? 0,
                     BookedSeats = bookedSeatsCount,
                     AvailableSeats = (bus.SeatConfigs?.Count ?? 0) - bookedSeatsCount,
-                    CompletedBookings = confirmedBookings.Count,
+                    CompletedBookings = activeBookings.Count,
                     CancelledBookings = cancelledBookings.Count,
-                    TotalRevenue = confirmedBookings.Sum(b => b.TotalAmount),
+                    TotalRevenue = activeBookings.Sum(b => b.TotalAmount),
                     PassengerDetails = passengerDetails
                 });
             }
@@ -1020,7 +1039,6 @@ namespace Tripzo.Repositories
                 {
                     var existingStart = existing.ScheduledDate.Date;
                     
-                    // Exact match check (Unique Constraint Prevention)
                     if (existing.RouteId == routeId && existingStart == newStart)
                     {
                         return new ScheduleCreationResultDTO
@@ -1028,7 +1046,10 @@ namespace Tripzo.Repositories
                             Success = false,
                             Message = existing.IsActive 
                                 ? $"Already Scheduled: This bus is already allocated to this route on {newStart:dd MMM yyyy}."
-                                : $"Conflict: An inactive schedule for this route already exists on {newStart:dd MMM yyyy}."
+                                : $"An inactive schedule for this route already exists on {newStart:dd MMM yyyy}.",
+                            IsInactiveConflict = !existing.IsActive,
+                            ConflictScheduleId = !existing.IsActive ? existing.ScheduleId : null,
+                            ConflictDate = !existing.IsActive ? existing.ScheduledDate : null
                         };
                     }
 
@@ -1052,6 +1073,39 @@ namespace Tripzo.Repositories
             }
 
             return new ScheduleCreationResultDTO { Success = true };
+        }
+
+        public async Task<ScheduleCreationResultDTO> ReactivateScheduleAsync(int scheduleId)
+        {
+            var schedule = await _context.BusSchedules
+                .Include(s => s.Route)
+                .Include(s => s.Bus)
+                .FirstOrDefaultAsync(s => s.ScheduleId == scheduleId);
+
+            if (schedule == null)
+            {
+                return new ScheduleCreationResultDTO { Success = false, Message = "Schedule not found." };
+            }
+
+            schedule.IsActive = true;
+            await _context.SaveChangesAsync();
+
+            return new ScheduleCreationResultDTO
+            {
+                Success = true,
+                Message = "Schedule reactivated successfully.",
+                Schedules = new List<ScheduleResponseDTO>
+                {
+                    new ScheduleResponseDTO
+                    {
+                        ScheduleId = schedule.ScheduleId,
+                        RouteName = $"{schedule.Route.SourceCity} to {schedule.Route.DestCity}",
+                        BusName = schedule.Bus.BusName,
+                        ScheduledDate = schedule.ScheduledDate,
+                        IsActive = true
+                    }
+                }
+            };
         }
     }
 }

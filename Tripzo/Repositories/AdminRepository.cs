@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.SqlClient;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Tripzo.Data;
 using Tripzo.DTO.Admin;
@@ -142,73 +142,116 @@ namespace Tripzo.Repositories
                 .Include(b => b.User)
                 .Include(b => b.Route)
                     .ThenInclude(r => r.Bus)
-                .Where(b => b.Status == "Cancelled")
+                .Include(b => b.BookedSeats)
+                    .ThenInclude(s => s.Seat)
+                .Where(b => b.BookedSeats.Any(s => s.Status == "CancellationPending"))
                 .OrderBy(b => b.BookingDate)
                 .ToListAsync();
         }
 
         // Admin approves cancellation - allows operator to process refund
-        public async Task<CancellationApprovalResultDTO> ApproveCancellationAsync(int bookingId)
+        public async Task<CancellationApprovalResultDTO> ApproveCancellationAsync(int bookingId, List<int>? seatIds = null)
         {
             var booking = await _context.Bookings
                 .Include(b => b.User)
                 .Include(b => b.Route)
+                .Include(b => b.BookedSeats)
                 .FirstOrDefaultAsync(b => b.BookingId == bookingId);
 
-            if (booking == null || booking.Status != "Cancelled")
+            if (booking == null)
             {
-                return new CancellationApprovalResultDTO
-                {
-                    Success = false,
-                    Message = "Booking not found or is not in a cancellable state."
-                };
+                return new CancellationApprovalResultDTO { Success = false, Message = "Booking not found." };
             }
 
-            booking.Status = "CancellationApproved";
+            var seatsToApprove = booking.BookedSeats
+                .Where(s => s.Status == "CancellationPending" && (seatIds == null || seatIds.Contains(s.BookedSeatId)))
+                .ToList();
+
+            if (!seatsToApprove.Any())
+            {
+                return new CancellationApprovalResultDTO { Success = false, Message = "No pending cancellation seats found for approval." };
+            }
+
+            foreach (var seat in seatsToApprove)
+            {
+                seat.Status = "CancellationApproved";
+            }
+
+            // Update Booking status
+            if (booking.BookedSeats.All(s => s.Status == "CancellationApproved" || s.Status == "Cancelled"))
+            {
+                booking.Status = "CancellationApproved";
+            }
+            else if (booking.BookedSeats.Any(s => s.Status == "CancellationApproved" || s.Status == "CancellationPending"))
+            {
+                booking.Status = "PartiallyCancelled";
+            }
+
             await _context.SaveChangesAsync();
 
             return new CancellationApprovalResultDTO
             {
                 Success = true,
-                Message = "Cancellation approved. Operator can now process the refund.",
+                Message = $"Approved cancellation for {seatsToApprove.Count} seat(s). Operator can now process the refund.",
                 BookingId = booking.BookingId,
                 PassengerName = booking.User?.FullName ?? "Passenger",
                 PassengerEmail = booking.User?.Email ?? "",
                 RouteName = $"{booking.Route?.SourceCity} to {booking.Route?.DestCity}",
-                Amount = booking.TotalAmount
+                Amount = (booking.TotalAmount / booking.BookedSeats.Count) * seatsToApprove.Count
             };
         }
 
-        // Admin rejects cancellation - reverts to Confirmed
-        public async Task<CancellationRejectionResultDTO> RejectCancellationAsync(int bookingId)
+        // Admin rejects cancellation - reverts specific seats to Confirmed
+        public async Task<CancellationRejectionResultDTO> RejectCancellationAsync(int bookingId, List<int>? seatIds = null)
         {
             var booking = await _context.Bookings
                 .Include(b => b.User)
                 .Include(b => b.Route)
+                .Include(b => b.BookedSeats)
                 .FirstOrDefaultAsync(b => b.BookingId == bookingId);
 
-            if (booking == null || booking.Status != "Cancelled")
+            if (booking == null)
             {
-                return new CancellationRejectionResultDTO
-                {
-                    Success = false,
-                    Message = "Booking not found or cannot be rejected."
-                };
+                return new CancellationRejectionResultDTO { Success = false, Message = "Booking not found." };
             }
 
-            booking.Status = "Confirmed";
+            var seatsToRestore = booking.BookedSeats
+                .Where(s => s.Status == "CancellationPending" && (seatIds == null || seatIds.Contains(s.BookedSeatId)))
+                .ToList();
+
+            if (!seatsToRestore.Any())
+            {
+                return new CancellationRejectionResultDTO { Success = false, Message = "No pending cancellation seats found to reject." };
+            }
+
+            foreach (var seat in seatsToRestore)
+            {
+                seat.Status = "Confirmed";
+                seat.CancellationReason = null; // Clear reason on rejection
+            }
+
+            // Recalculate Booking status
+            if (booking.BookedSeats.All(s => s.Status == "Confirmed"))
+            {
+                booking.Status = "Confirmed";
+            }
+            else if (booking.BookedSeats.Any(s => s.Status == "Cancelled" || s.Status == "CancellationApproved" || s.Status == "CancellationPending"))
+            {
+                booking.Status = "PartiallyCancelled";
+            }
+
             await _context.SaveChangesAsync();
 
             return new CancellationRejectionResultDTO
             {
                 Success = true,
-                Message = "Cancellation rejected. Booking has been restored to Confirmed status.",
+                Message = $"Rejected cancellation for {seatsToRestore.Count} seat(s). Booking restored to Confirmed status for these seats.",
                 BookingId = booking.BookingId,
                 PassengerName = booking.User?.FullName ?? "Passenger",
                 PassengerEmail = booking.User?.Email ?? "",
                 RouteName = $"{booking.Route?.SourceCity} to {booking.Route?.DestCity}",
                 JourneyDate = booking.JourneyDate,
-                Amount = booking.TotalAmount
+                Amount = (booking.TotalAmount / booking.BookedSeats.Count) * seatsToRestore.Count
             };
         }
 
