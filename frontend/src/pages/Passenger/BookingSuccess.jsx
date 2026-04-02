@@ -6,35 +6,42 @@ import PassengerLayout from '../../layouts/PassengerLayout';
 const BookingSuccess = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { booking, fromCity, toCity, bus } = location.state || {};
+  const { booking, fromCity, toCity, bus, passengers } = location.state || {};
+ 
+   if (!booking) {
+     return (
+       <PassengerLayout>
+         <div className="text-center py-5">
+           <p className="text-muted">No booking data found.</p>
+           <button className="btn btn-primary" onClick={() => navigate('/passenger/dashboard')}>
+             Go to Dashboard
+           </button>
+         </div>
+       </PassengerLayout>
+     );
+   }
+ 
+   const handleDownloadTicket = () => {
+    const passengerInfo = (passengers || []).map(p => 
+      `Seat ${p.seatNumber}: ${p.name} (${p.age}y, ${p.gender})`
+    ).join('\n');
 
-  if (!booking) {
-    return (
-      <PassengerLayout>
-        <div className="text-center py-5">
-          <p className="text-muted">No booking data found.</p>
-          <button className="btn btn-primary" onClick={() => navigate('/passenger/dashboard')}>
-            Go to Dashboard
-          </button>
-        </div>
-      </PassengerLayout>
-    );
-  }
+     const ticketContent = `
+ TRIPZO - BUS TICKET
+ ====================
+ PNR: ${booking.pnr}
+ Booking ID: ${booking.bookingId}
+ Status: ${booking.status}
+ 
+ Route: ${fromCity} → ${toCity}
+ Bus: ${bus?.busName || '—'}
+ Amount Paid: ₹${booking.totalAmount}
 
-  const handleDownloadTicket = () => {
-    const ticketContent = `
-TRIPZO - BUS TICKET
-====================
-PNR: ${booking.pnr}
-Booking ID: ${booking.bookingId}
-Status: ${booking.status}
-
-Route: ${fromCity} → ${toCity}
-Bus: ${bus?.busName || '—'}
-Amount Paid: ₹${booking.totalAmount}
-====================
-Thank you for travelling with Tripzo!
-    `.trim();
+ Travelers:
+ ${passengerInfo}
+ ====================
+ Thank you for travelling with Tripzo!
+     `.trim();
     const blob = new Blob([ticketContent], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -81,19 +88,29 @@ Thank you for travelling with Tripzo!
                   {booking.status}
                 </span>
               </div>
-              <div className="d-flex align-items-center justify-content-center gap-4 mt-3">
-                <div className="text-center">
+              <div className="d-flex align-items-center justify-content-between gap-2 mt-3">
+                <div className="text-start">
                   <div className="fw-bold fs-4">{fromCity}</div>
-                  <div className="opacity-75 small">{bus?.departureTime?.slice(0, 5) || 'Dep.'}</div>
+                  <div className="opacity-75 small">
+                    {new Date(bus.departureDateTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                  </div>
+                  <div className="fw-bold small">
+                    {new Date(bus.departureDateTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                  </div>
                 </div>
                 <div className="text-center flex-grow-1">
                   <div style={{ borderTop: '2px dashed rgba(255,255,255,0.4)', position: 'relative' }}>
                     <MdDirectionsBus size={20} className="position-absolute" style={{ top: -11, left: '50%', transform: 'translateX(-50%)' }} />
                   </div>
                 </div>
-                <div className="text-center">
+                <div className="text-end">
                   <div className="fw-bold fs-4">{toCity}</div>
-                  <div className="opacity-75 small">Arrival</div>
+                  <div className="opacity-75 small">
+                    {new Date(bus.arrivalDateTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                  </div>
+                  <div className="fw-bold small">
+                    {new Date(bus.arrivalDateTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                  </div>
                 </div>
               </div>
             </div>
@@ -123,10 +140,37 @@ Thank you for travelling with Tripzo!
                   <p className="fw-semibold mb-0">{bus?.busName || '—'}</p>
                 </div>
                 <div className="col-6 text-end">
-                  <p className="text-muted small mb-0">Bus Type</p>
-                  <p className="fw-semibold mb-0">{bus?.busType || '—'}</p>
-                </div>
-              </div>
+                   <p className="text-muted small mb-0">Bus Type</p>
+                   <p className="fw-semibold mb-0">{bus?.busType || '—'}</p>
+                 </div>
+               </div>
+ 
+               {/* Travelers List */}
+               <div className="mt-4 pt-3" style={{ borderTop: '1px solid #E2E8F0' }}>
+                 <p className="text-muted small fw-bold mb-2">TRAVELER DETAILS</p>
+                 <div className="table-responsive">
+                   <table className="table table-borderless table-sm mb-0">
+                     <thead>
+                       <tr className="text-muted small" style={{ fontSize: '0.75rem' }}>
+                         <th>SEAT</th>
+                         <th>NAME</th>
+                         <th>AGE</th>
+                         <th>GENDER</th>
+                       </tr>
+                     </thead>
+                     <tbody>
+                       {(passengers || []).map((p, idx) => (
+                         <tr key={idx} style={{ fontSize: '0.85rem' }}>
+                           <td className="fw-bold">{p.seatNumber}</td>
+                           <td>{p.name}</td>
+                           <td>{p.age}</td>
+                           <td>{p.gender}</td>
+                         </tr>
+                       ))}
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
 
               {/* Barcode (decorative) */}
               <div className="text-center mt-3 pt-3" style={{ borderTop: '1px solid #E2E8F0' }}>

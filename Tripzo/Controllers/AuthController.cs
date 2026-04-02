@@ -58,7 +58,9 @@ namespace Tripzo.Controllers
                 Token = token,
                 Email = user.Email,
                 Role = user.Role,
-                FullName = user.FullName
+                FullName = user.FullName,
+                PhoneNumber = user.PhoneNumber,
+                Gender = user.Gender
             });
         }
     }

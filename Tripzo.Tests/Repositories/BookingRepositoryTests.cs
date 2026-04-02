@@ -77,10 +77,15 @@ namespace Tripzo.Tests.Repositories
                 BookingDate = DateTime.Now,
                 Status = "Confirmed"
             };
-            var seatIds = new List<int> { 3, 4 };
+
+            var passengers = new List<Tripzo.DTOs.Passenger.PassengerDetailDTO>
+            {
+                new Tripzo.DTOs.Passenger.PassengerDetailDTO { SeatId = 3, Name = "Test User 1", Age = 30, Gender = "Male", Phone = "1234567890" },
+                new Tripzo.DTOs.Passenger.PassengerDetailDTO { SeatId = 4, Name = "Test User 2", Age = 28, Gender = "Female", Phone = "0987654321" }
+            };
 
             // Act
-            var result = await _bookingRepo.CreateBookingAsync(booking, 1, seatIds);
+            var result = await _bookingRepo.CreateBookingAsync(booking, 1, passengers);
 
             // Assert
             Assert.That(result.BookingId, Is.GreaterThan(0));
@@ -111,8 +116,14 @@ namespace Tripzo.Tests.Repositories
             };
 
             // Act & Assert - Try to book the same seat
+
+            var passengers = new List<Tripzo.DTOs.Passenger.PassengerDetailDTO>
+            {
+                new Tripzo.DTOs.Passenger.PassengerDetailDTO { SeatId = 1, Name = "Test User", Age = 30, Gender = "Male", Phone = "1234567890" }
+            };
+
             var ex = Assert.ThrowsAsync<ApplicationException>(async () =>
-                await _bookingRepo.CreateBookingAsync(booking, 1, new List<int> { 1 }));
+                await _bookingRepo.CreateBookingAsync(booking, 1, passengers));
 
             Assert.That(ex!.Message, Does.Contain("already booked"));
         }

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import authService from '../../services/authService';
+import authService from '../../services/auth/authService';
 import { MdDirectionsBus, MdEmail, MdLock, MdPerson, MdPhone } from 'react-icons/md';
 
 const Signup = () => {

@@ -6,6 +6,7 @@ using Tripzo.DTOs.Operator;
 using Tripzo.Models;
 using Tripzo.Repositories;
 using Tripzo.Services;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tripzo.Tests.Controllers
 {
@@ -16,19 +17,33 @@ namespace Tripzo.Tests.Controllers
     public class OperatorControllerTests
     {
         private Mock<IFleetRepository> _mockFleetRepo;
+        private Mock<IBookingRepository> _mockBookingRepo;
+        private Mock<ITicketPdfService> _mockTicketPdfService;
         private Mock<IMapper> _mockMapper;
         private Mock<IEmailService> _mockEmailService;
         private Mock<IRazorpayService> _mockRazorpayService;
+        private Mock<IServiceScopeFactory> _mockScopeFactory;
         private OperatorController _controller;
 
         [SetUp]
         public void Setup()
         {
             _mockFleetRepo = new Mock<IFleetRepository>();
+            _mockBookingRepo = new Mock<IBookingRepository>();
+            _mockTicketPdfService = new Mock<ITicketPdfService>();
             _mockMapper = new Mock<IMapper>();
             _mockEmailService = new Mock<IEmailService>();
             _mockRazorpayService = new Mock<IRazorpayService>();
-            _controller = new OperatorController(_mockFleetRepo.Object, _mockMapper.Object, _mockEmailService.Object, _mockRazorpayService.Object);
+            _mockScopeFactory = new Mock<IServiceScopeFactory>();
+            _controller = new OperatorController(
+                _mockFleetRepo.Object,
+                _mockBookingRepo.Object,
+                _mockTicketPdfService.Object,
+                _mockMapper.Object,
+                _mockEmailService.Object,
+                _mockRazorpayService.Object,
+                _mockScopeFactory.Object
+            );
         }
 
         #region Seat Configuration - Critical Tests

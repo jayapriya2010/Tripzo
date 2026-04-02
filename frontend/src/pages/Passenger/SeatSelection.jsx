@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { MdChair, MdArrowForward, MdInfo, MdArrowBack } from 'react-icons/md';
 import PassengerLayout from '../../layouts/PassengerLayout';
-import passengerService from '../../services/passengerService';
+import passengerService from '../../services/passenger/passengerService';
 
 const SeatSelection = () => {
   const navigate = useNavigate();

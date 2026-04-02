@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { MdConfirmationNumber, MdCheckCircle, MdCancel, MdPending, MdSearch } from 'react-icons/md';
+import { MdConfirmationNumber, MdCheckCircle, MdCancel, MdPending, MdSearch, MdVisibility } from 'react-icons/md';
 import PassengerLayout from '../../layouts/PassengerLayout';
-import authService from '../../services/authService';
-import passengerService from '../../services/passengerService';
+import TicketModal from '../../components/Passenger/TicketModal';
+import authService from '../../services/auth/authService';
+import passengerService from '../../services/passenger/passengerService';
 
 const MyBookings = () => {
   const user = authService.getCurrentUser();
@@ -14,6 +15,7 @@ const MyBookings = () => {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
+  const [viewTicketId, setViewTicketId] = useState(null);
 
   useEffect(() => {
     fetchBookings();
@@ -140,18 +142,27 @@ const MyBookings = () => {
                     <td className="fw-bold" style={{ color: 'var(--primary-blue)' }}>₹{b.amount}</td>
                     <td>{statusBadge(b.status)}</td>
                     <td>
-                      {b.status === 'Confirmed' ? (
-                        <button
-                          className="btn btn-sm btn-outline-danger rounded-3"
-                          onClick={() => openCancelModal(b.bookingId)}
-                          disabled={cancelling === b.bookingId}>
-                          {cancelling === b.bookingId
-                            ? <span className="spinner-border spinner-border-sm" />
-                            : 'Cancel'}
-                        </button>
-                      ) : (
-                        <span className="text-muted small">—</span>
-                      )}
+                      <div className="d-flex gap-2">
+                        {b.status === 'Confirmed' && (
+                          <button
+                            className="btn btn-sm btn-outline-primary rounded-3 d-flex align-items-center gap-1"
+                            onClick={() => setViewTicketId(b.bookingId)}>
+                            <MdVisibility size={14} /> Ticket
+                          </button>
+                        )}
+                        {b.status === 'Confirmed' ? (
+                          <button
+                            className="btn btn-sm btn-outline-danger rounded-3"
+                            onClick={() => openCancelModal(b.bookingId)}
+                            disabled={cancelling === b.bookingId}>
+                            {cancelling === b.bookingId
+                              ? <span className="spinner-border spinner-border-sm" />
+                              : 'Cancel'}
+                          </button>
+                        ) : (
+                          <span className="text-muted small">—</span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -190,6 +201,13 @@ const MyBookings = () => {
             </div>
           </div>
         </div>
+      )}
+      {/* Ticket Modal */}
+      {viewTicketId && (
+        <TicketModal 
+          bookingId={viewTicketId} 
+          onClose={() => setViewTicketId(null)} 
+        />
       )}
     </PassengerLayout>
   );

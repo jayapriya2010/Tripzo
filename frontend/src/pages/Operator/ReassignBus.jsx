@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { MdArrowBack, MdSync, MdDirectionsBus, MdCheckCircle, MdWarning } from 'react-icons/md';
+import { MdArrowBack, MdSync, MdDirectionsBus, MdCheckCircle, MdWarning, MdAddCircle } from 'react-icons/md';
 import operatorService from '../../services/operator/operatorService';
-import authService from '../../services/authService';
+import authService from '../../services/auth/authService';
 
 const ReassignBus = () => {
   const location = useLocation();
@@ -10,7 +10,7 @@ const ReassignBus = () => {
   const user = authService.getCurrentUser();
   const operatorId = user?.userId || user?.UserId;
 
-  const { scheduleId, routeName, date } = location.state || {};
+  const { scheduleId, routeName, date, currentBusId } = location.state || {};
   const [fleet, setFleet] = useState([]);
   const [selectedBus, setSelectedBus] = useState('');
   const [loading, setLoading] = useState(true);
@@ -24,20 +24,54 @@ const ReassignBus = () => {
       return;
     }
 
-    const fetchFleet = async () => {
+    const fetchData = async () => {
       try {
-        const res = await operatorService.getFleet(operatorId);
-        // Filter: Must be active and different from current bus (though we don't strictly have current bus ID in state)
-        // Also ensure bus is compatible with route capacity if needed, but for now just active fleet.
-        setFleet(res.data.filter(b => b.isActive));
+        const [fleetRes, schedRes] = await Promise.all([
+          operatorService.getFleet(operatorId),
+          operatorService.getSchedules(operatorId)
+        ]);
+
+        const allBuses = fleetRes.data;
+        const allSchedules = schedRes.data;
+
+        // 1. Identify current bus details
+        const currentBus = allBuses.find(b => b.busId === currentBusId);
+        
+        // 2. Filter fleet
+        const filteredFleet = allBuses.filter(bus => {
+          // Rule 1: Must be active
+          if (!bus.isActive) return false;
+          
+          // Rule 2: Cannot be the current bus
+          if (bus.busId === currentBusId) return false;
+          
+          // Rule 3: Must have similar configuration (matching type and capacity)
+          // We only apply this if we successfully found the current bus data
+          if (currentBus) {
+            if (bus.busType !== currentBus.busType) return false;
+            if (bus.capacity !== currentBus.capacity) return false;
+          }
+
+          // Rule 4: Must be available on the target date
+          // Check if this bus has any schedule on the target date (excluding the one we're reassigning)
+          const targetDateStr = new Date(date).toISOString().split('T')[0];
+          const isBusy = allSchedules.some(s => {
+            const sDateStr = new Date(s.scheduledDate).toISOString().split('T')[0];
+            return s.busName === bus.busName && sDateStr === targetDateStr && s.scheduleId !== parseInt(scheduleId);
+          });
+          
+          return !isBusy;
+        });
+
+        setFleet(filteredFleet);
       } catch { 
         setFleet([]); 
       } finally { 
         setLoading(false); 
       }
     };
-    fetchFleet();
-  }, [scheduleId, operatorId]);
+    fetchData();
+  }, [scheduleId, operatorId, currentBusId, date]);
 
   const handleReassign = async (e) => {
     e.preventDefault();
@@ -99,7 +133,16 @@ const ReassignBus = () => {
 
         <div className="col-lg-6">
           <div className="tripzo-card border-top border-4 border-primary shadow-sm h-100">
-            <h6 className="fw-bold mb-3 d-flex align-items-center gap-2 text-primary"><MdDirectionsBus /> Assign New Vehicle</h6>
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <h6 className="fw-bold m-0 d-flex align-items-center gap-2 text-primary"><MdDirectionsBus /> Assign New Vehicle</h6>
+              <button 
+                type="button" 
+                className="btn btn-sm btn-link text-primary text-decoration-none fw-bold d-flex align-items-center gap-1"
+                onClick={() => navigate('/operator/buses')}
+              >
+                <MdAddCircle /> Add New Bus
+              </button>
+            </div>
             {error && <div className="alert alert-danger shadow-sm small">{error}</div>}
             {success && <div className="alert alert-success shadow-sm small">{success}</div>}
             
@@ -108,7 +151,13 @@ const ReassignBus = () => {
                 <label className="form-label fw-bold small text-muted">SELECT REPLACEMENT BUS</label>
                 <div className="list-group">
                   {fleet.length === 0 ? (
-                    <p className="text-danger small p-3 bg-danger bg-opacity-10 rounded-3 border">No active buses available for reassignment. Please activate more buses first.</p>
+                    <div className="text-center py-4 bg-light rounded-3 border border-dashed">
+                      <MdWarning className="text-warning mb-2" size={32} style={{ opacity: 0.5 }} />
+                      <p className="text-muted small px-3 m-0">No active buses with similar configuration ({fleet.length === 0 && 'matching type/capacity'}) available for this date.</p>
+                      <button type="button" className="btn btn-sm btn-primary mt-3 rounded-pill px-3" onClick={() => navigate('/operator/buses')}>
+                        Manage Fleet
+                      </button>
+                    </div>
                   ) : (
                     fleet.map(bus => (
                       <label key={bus.busId} className={`list-group-item d-flex justify-content-between align-items-center rounded-3 mb-2 p-3 border-0 ${selectedBus == bus.busId ? 'bg-primary text-white' : 'bg-light'}`} style={{ cursor: 'pointer' }}>

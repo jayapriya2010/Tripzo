@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MdChat, MdStar, MdPerson, MdDirectionsBus, MdReply, MdCheckCircle } from 'react-icons/md';
 import operatorService from '../../services/operator/operatorService';
-import authService from '../../services/authService';
+import authService from '../../services/auth/authService';
 
 const OperatorFeedbacks = () => {
   const user = authService.getCurrentUser();
@@ -98,7 +98,7 @@ const OperatorFeedbacks = () => {
                     </div>
                     <div className="d-flex flex-column">
                       <h6 className="fw-bold m-0">{fb.passengerName}</h6>
-                      <p className="text-muted x-small m-0">{new Date(fb.feedbackDate).toLocaleDateString()}</p>
+                      <p className="text-muted x-small m-0">{new Date(fb.createdAt).toLocaleDateString()}</p>
                     </div>
                   </div>
                   <div className="d-flex flex-column align-items-end gap-1">

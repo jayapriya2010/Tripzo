@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace Tripzo.Models
 {
@@ -27,5 +27,7 @@ namespace Tripzo.Models
 
         [Required]
         public TimeSpan ArrivalTime { get; set; }
+
+        public int DayOffset { get; set; } // 0 = Day of departure, 1 = next day, etc.
     }
 }

@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace Tripzo.Models
 {
@@ -10,5 +10,18 @@ namespace Tripzo.Models
 
         public int SeatId { get; set; }
         public virtual SeatConfig Seat { get; set; }
+
+        [Required]
+        [StringLength(150)]
+        public string PassengerName { get; set; } = string.Empty;
+
+        [Range(1, 120)]
+        public int PassengerAge { get; set; }
+
+        [StringLength(20)]
+        public string Gender { get; set; } = string.Empty;
+
+        [StringLength(15)]
+        public string PassengerPhone { get; set; } = string.Empty;
     }
 }

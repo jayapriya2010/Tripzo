@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Tripzo.Models;
 
 namespace Tripzo.Data
@@ -151,13 +151,13 @@ namespace Tripzo.Data
                       .HasForeignKey(b => b.RouteId)
                       .OnDelete(DeleteBehavior.Restrict);
 
-                // Mapping Boarding/Dropping Stop IDs (No Navigation for simplicity)
-                entity.HasOne<RouteStop>()
+                // Mapping Boarding/Dropping Stop IDs
+                entity.HasOne(b => b.BoardingStop)
                       .WithMany()
                       .HasForeignKey(b => b.BoardingStopId)
                       .OnDelete(DeleteBehavior.NoAction);
 
-                entity.HasOne<RouteStop>()
+                entity.HasOne(b => b.DroppingStop)
                       .WithMany()
                       .HasForeignKey(b => b.DroppingStopId)
                       .OnDelete(DeleteBehavior.NoAction);

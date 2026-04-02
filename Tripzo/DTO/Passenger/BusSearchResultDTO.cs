@@ -14,5 +14,8 @@ namespace Tripzo.DTOs.Passenger
         public int AvailableSeats { get; set; }
         public double? AverageRating { get; set; } // Average rating from feedbacks
         public int TotalReviews { get; set; } // Number of reviews
+        public DateTime DepartureDateTime { get; set; }
+        public DateTime ArrivalDateTime { get; set; }
+        public bool HasNextDayArrival { get; set; }
     }
 }

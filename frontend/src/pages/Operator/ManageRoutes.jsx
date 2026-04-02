@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MdAdd, MdVisibility, MdRoute } from 'react-icons/md';
 import operatorService from '../../services/operator/operatorService';
-import authService from '../../services/authService';
+import authService from '../../services/auth/authService';
 
 const ManageRoutes = () => {
   const [buses, setBuses] = useState([]);

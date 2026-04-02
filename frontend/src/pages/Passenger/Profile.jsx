@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { MdAccountCircle, MdEdit, MdSave, MdClose } from 'react-icons/md';
 import PassengerLayout from '../../layouts/PassengerLayout';
-import authService from '../../services/authService';
-import passengerService from '../../services/passengerService';
+import authService from '../../services/auth/authService';
+import passengerService from '../../services/passenger/passengerService';
 
 const Profile = () => {
   const user = authService.getCurrentUser();

@@ -1,4 +1,4 @@
-﻿namespace Tripzo.DTOs.Operator
+namespace Tripzo.DTOs.Operator
 {
     public class StopDTO
     {
@@ -7,5 +7,6 @@
         public string StopType { get; set; } // "Boarding" or "Dropping"
         public int StopOrder { get; set; }
         public TimeSpan ArrivalTime { get; set; }
+        public int DayOffset { get; set; }
     }
 }

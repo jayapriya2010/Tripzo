@@ -5,7 +5,8 @@ import {
   MdChair, MdFilterList, MdArrowForward, MdAccessTime
 } from 'react-icons/md';
 import PassengerLayout from '../../layouts/PassengerLayout';
-import passengerService from '../../services/passengerService';
+import passengerService from '../../services/passenger/passengerService';
+import BusReviewsModal from '../../components/Passenger/BusReviewsModal';
 
 const SearchResults = () => {
   const navigate = useNavigate();
@@ -28,6 +29,9 @@ const SearchResults = () => {
     maxFare: '',
     rating: '',
   });
+
+  const [selectedBusForReviews, setSelectedBusForReviews] = useState(null);
+  const [showReviewsModal, setShowReviewsModal] = useState(false);
 
   useEffect(() => {
     if (params.fromCity && params.toCity && params.travelDate) {
@@ -215,11 +219,30 @@ const SearchResults = () => {
                             style={{ background: busTypeColors[bus.busType] || '#6B7280' }}>
                             {bus.busType}
                           </span>
-                          <div className="d-flex align-items-center gap-2 mt-2">
-                            <MdAccessTime size={14} className="text-muted" />
-                            <span className="text-muted small">{bus.departureTime?.slice(0, 5)}</span>
-                            <MdArrowForward size={14} className="text-muted" />
-                            <span className="text-muted small">{form.fromCity} → {form.toCity}</span>
+                          <div className="d-flex align-items-center gap-3 mt-3">
+                            <div className="text-center px-2 py-1 bg-light rounded-3">
+                              <div className="fw-bold small text-dark" style={{ fontSize: '0.9rem' }}>
+                                {new Date(bus.departureDateTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                              </div>
+                              <div className="text-muted extra-small" style={{ fontSize: '0.7rem' }}>
+                                {new Date(bus.departureDateTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                              </div>
+                            </div>
+                            <div className="d-flex flex-column align-items-center">
+                              <div className="text-muted small mb-1" style={{ fontSize: '0.65rem' }}>{form.fromCity} → {form.toCity}</div>
+                              <MdArrowForward size={14} className="text-muted" />
+                            </div>
+                            <div className="text-center px-2 py-1 bg-light rounded-3 position-relative">
+                              <div className="fw-bold small text-dark" style={{ fontSize: '0.9rem' }}>
+                                {new Date(bus.arrivalDateTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                {bus.hasNextDayArrival && (
+                                  <span className="badge bg-danger bg-opacity-10 text-danger position-absolute top-0 start-100 translate-middle rounded-pill p-1 border border-danger border-opacity-25" style={{ fontSize: '0.5rem' }}>+1 Day</span>
+                                )}
+                              </div>
+                              <div className="text-muted extra-small" style={{ fontSize: '0.7rem' }}>
+                                {new Date(bus.arrivalDateTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                              </div>
+                            </div>
                           </div>
                           {bus.amenities?.length > 0 && (
                             <div className="d-flex flex-wrap gap-1 mt-2">
@@ -246,6 +269,15 @@ const SearchResults = () => {
                         <span className="fw-bold">{bus.averageRating?.toFixed(1) || 'N/A'}</span>
                         <span className="text-muted small">({bus.totalReviews || 0})</span>
                       </div>
+                      <button 
+                        className="btn btn-link btn-sm text-primary p-0 mb-2 small text-decoration-none"
+                        onClick={() => {
+                          setSelectedBusForReviews(bus);
+                          setShowReviewsModal(true);
+                        }}
+                      >
+                        View Reviews
+                      </button>
                       <p className="text-muted small mb-0">
                         <span className="fw-semibold" style={{ color: bus.availableSeats > 10 ? '#22C55E' : '#EF4444' }}>
                           {bus.availableSeats}
@@ -271,6 +303,13 @@ const SearchResults = () => {
           )}
         </div>
       </div>
+      
+      {showReviewsModal && (
+        <BusReviewsModal 
+          bus={selectedBusForReviews} 
+          onClose={() => setShowReviewsModal(false)} 
+        />
+      )}
     </PassengerLayout>
   );
 };

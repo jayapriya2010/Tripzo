@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import authService from '../../services/authService';
+import authService from '../../services/auth/authService';
 import { MdDirectionsBus, MdEmail, MdLock } from 'react-icons/md';
 
 const Login = () => {

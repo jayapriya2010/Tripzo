@@ -19,6 +19,11 @@ const userService = {
     deactivateUser: async (userId) => {
         const response = await api.put(`/Admin/deactivate-user/${userId}`);
         return response.data;
+    },
+
+    deleteUser: async (userId) => {
+        const response = await api.delete(`/Admin/users/${userId}`);
+        return response.data;
     }
 };
 

@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace Tripzo.DTOs.Operator
 {
     public class ScheduleDeactivationResultDTO
@@ -27,10 +29,20 @@ namespace Tripzo.DTOs.Operator
         public int ScheduleId { get; set; }
         public int OldBusId { get; set; }
         public string OldBusName { get; set; } = string.Empty;
+        public string OldBusNumber { get; set; } = string.Empty;
         public int NewBusId { get; set; }
         public string NewBusName { get; set; } = string.Empty;
+        public string NewBusNumber { get; set; } = string.Empty;
         public string RouteName { get; set; } = string.Empty;
         public DateTime ScheduledDate { get; set; }
         public int BookingsTransferred { get; set; }
+        public List<AffectedBookingDTO> AffectedBookings { get; set; } = new List<AffectedBookingDTO>();
+    }
+
+    public class AffectedBookingDTO
+    {
+        public int BookingId { get; set; }
+        public string PassengerName { get; set; } = string.Empty;
+        public string PassengerEmail { get; set; } = string.Empty;
     }
 }

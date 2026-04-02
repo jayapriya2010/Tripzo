@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { MdFeedback, MdStar, MdStarOutline, MdSend, MdHistory } from 'react-icons/md';
 import PassengerLayout from '../../layouts/PassengerLayout';
-import authService from '../../services/authService';
-import passengerService from '../../services/passengerService';
+import authService from '../../services/auth/authService';
+import passengerService from '../../services/passenger/passengerService';
 
 const StarRating = ({ rating, onRate }) => (
   <div className="d-flex gap-1">
@@ -38,13 +38,20 @@ const Feedback = () => {
       passengerService.getHistory(user.userId).then(r => r.data || []).catch(() => []),
       passengerService.getUserFeedbacks(user.userId).then(r => r.data || []).catch(() => []),
     ]).then(([history, feedbacks]) => {
-      // Only completed (not cancelled) bookings whose journey date has passed
+      // Only completed or confirmed bookings whose journey date has passed or is today
       const today = new Date();
-      const eligible = history.filter(b =>
-        b.status === 'Confirmed' &&
-        new Date(b.journeyDate) < today &&
-        !feedbacks.some(f => f.bookingId === b.bookingId)
-      );
+      today.setHours(0, 0, 0, 0); // Normalize to start of day for accurate comparison
+      
+      const eligible = history.filter(b => {
+        const journeyDate = new Date(b.journeyDate);
+        journeyDate.setHours(0, 0, 0, 0);
+        
+        const isValidStatus = ['Confirmed', 'Completed'].includes(b.status);
+        const hasPassedOrIsToday = journeyDate <= today;
+        const noPrevFeedback = !feedbacks.some(f => f.bookingId === b.bookingId);
+        
+        return isValidStatus && hasPassedOrIsToday && noPrevFeedback;
+      });
       setBookings(eligible);
       setPastFeedbacks(feedbacks);
     }).finally(() => setLoadingData(false));
@@ -74,11 +81,18 @@ const Feedback = () => {
         passengerService.getUserFeedbacks(user.userId).then(r => r.data || []),
       ]);
       const today = new Date();
-      const eligible = history.filter(b =>
-        b.status === 'Confirmed' &&
-        new Date(b.journeyDate) < today &&
-        !feedbacks.some(f => f.bookingId === b.bookingId)
-      );
+      today.setHours(0, 0, 0, 0);
+      
+      const eligible = history.filter(b => {
+        const journeyDate = new Date(b.journeyDate);
+        journeyDate.setHours(0, 0, 0, 0);
+        
+        const isValidStatus = ['Confirmed', 'Completed'].includes(b.status);
+        const hasPassedOrIsToday = journeyDate <= today;
+        const noPrevFeedback = !feedbacks.some(f => f.bookingId === b.bookingId);
+        
+        return isValidStatus && hasPassedOrIsToday && noPrevFeedback;
+      });
       setBookings(eligible);
       setPastFeedbacks(feedbacks);
     } catch (err) {
@@ -201,6 +215,12 @@ const Feedback = () => {
                     <p className="text-muted" style={{ fontSize: '0.7rem' }}>
                       {new Date(fb.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                     </p>
+                    {fb.operatorResponse && (
+                      <div className="mt-2 p-2 rounded-2" style={{ background: 'rgba(59, 130, 246, 0.05)', borderLeft: '3px solid var(--primary-blue)' }}>
+                        <p className="fw-bold mb-1" style={{ fontSize: '0.65rem', color: 'var(--primary-blue)' }}>OPERATOR RESPONSE:</p>
+                        <p className="small m-0 text-dark" style={{ lineHeight: '1.4' }}>{fb.operatorResponse}</p>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

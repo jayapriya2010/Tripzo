@@ -5,6 +5,8 @@ using Tripzo.DTOs.Operator;
 using Tripzo.DTO.Admin;
 using Tripzo.Repositories;
 using Tripzo.Services;
+using System.Linq;
+using System.Threading.Tasks;
 using AutoMapper;
 
 namespace Tripzo.Controllers
@@ -15,16 +17,29 @@ namespace Tripzo.Controllers
     public class OperatorController : ControllerBase
     {
         private readonly IFleetRepository _fleetRepo;
+        private readonly IBookingRepository _bookingRepo;
+        private readonly ITicketPdfService _ticketPdfService;
         private readonly IMapper _mapper;
         private readonly IEmailService _emailService;
         private readonly IRazorpayService _razorpayService;
+        private readonly IServiceScopeFactory _scopeFactory;
 
-        public OperatorController(IFleetRepository fleetRepo, IMapper mapper, IEmailService emailService, IRazorpayService razorpayService)
+        public OperatorController(
+            IFleetRepository fleetRepo, 
+            IBookingRepository bookingRepo,
+            ITicketPdfService ticketPdfService,
+            IMapper mapper, 
+            IEmailService emailService, 
+            IRazorpayService razorpayService,
+            IServiceScopeFactory scopeFactory)
         {
             _fleetRepo = fleetRepo;
+            _bookingRepo = bookingRepo;
+            _ticketPdfService = ticketPdfService;
             _mapper = mapper;
             _emailService = emailService;
             _razorpayService = razorpayService;
+            _scopeFactory = scopeFactory;
         }
 
         // 1. Dashboard: Provides performance metrics for the landing page
@@ -57,7 +72,7 @@ namespace Tripzo.Controllers
             var result = await _fleetRepo.AddBusAsync(bus);
             if (result == null) return BadRequest(new { message = "Could not add bus. Bus number may already exist." });
  
-            return Ok(new { message = "Bus registered successfully.", busId = result, BusId = result });
+            return Ok(new { message = "Bus registered successfully.", busId = result });
         }
 
         // 3. Seat Configuration: Define the layout (Sleeper/Seater) and AddonFares
@@ -180,8 +195,8 @@ namespace Tripzo.Controllers
             var route = _mapper.Map<Tripzo.Models.Route>(dto);
             var stops = dto.Stops.Select(s => _mapper.Map<RouteStop>(s)).ToList();
 
-            var result = await _fleetRepo.DefineRouteWithStopsAsync(route, stops);
-            if (!result) return BadRequest(new { message = "Error creating route. Check if bus exists." });
+            var result = await _fleetRepo.DefineRouteWithStopsAsync(route, stops, dto.ScheduleDate);
+            if (!result) return BadRequest(new { message = "Error creating route. The bus might be busy on the selected date or does not exist." });
 
             return Ok(new { message = "Route and stops created successfully." });
         }
@@ -404,6 +419,45 @@ namespace Tripzo.Controllers
 
             if (!result.Success)
                 return BadRequest(new { message = result.Message });
+
+            // Fire-and-forget email notifications to passengers with updated tickets
+            if (result.AffectedBookings != null && result.AffectedBookings.Any())
+            {
+                _ = Task.Run(async () =>
+                {
+                    using (var scope = _scopeFactory.CreateScope())
+                    {
+                        var scopedBookingRepo = scope.ServiceProvider.GetRequiredService<IBookingRepository>();
+                        var scopedPdfService = scope.ServiceProvider.GetRequiredService<ITicketPdfService>();
+                        var scopedEmailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
+
+                        foreach (var booking in result.AffectedBookings)
+                        {
+                            try
+                            {
+                                var ticketDetails = await scopedBookingRepo.GetBookingDetailsForTicketAsync(booking.BookingId);
+                                if (ticketDetails != null)
+                                {
+                                    var pdfBytes = scopedPdfService.GenerateTicketPdf(ticketDetails);
+                                    await scopedEmailService.SendBusReassignmentEmailAsync(
+                                        booking.PassengerEmail,
+                                        booking.PassengerName,
+                                        booking.BookingId,
+                                        result.RouteName,
+                                        result.ScheduledDate,
+                                        $"{result.OldBusName} ({result.OldBusNumber})",
+                                        $"{result.NewBusName} ({result.NewBusNumber})",
+                                        pdfBytes);
+                                }
+                            }
+                            catch (Exception)
+                            {
+                                // Catching email errors locally to ensure one failure doesn't stop others
+                            }
+                        }
+                    }
+                });
+            }
 
             return Ok(result);
         }

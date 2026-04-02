@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { MdNotifications, MdAccountCircle, MdLogout } from 'react-icons/md';
-import authService from '../../services/authService';
+import authService from '../../services/auth/authService';
 
 const OperatorNavbar = () => {
   const user = authService.getCurrentUser();

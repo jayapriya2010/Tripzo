@@ -72,6 +72,9 @@ namespace Tripzo.Controllers
                     BusType = sr.Bus?.BusType,
                     DepartureTime = sr.Route?.RouteStops?.FirstOrDefault(s => s.StopOrder == 1)?.ArrivalTime ?? TimeSpan.Zero,
                     Fare = sr.Route?.BaseFare ?? 0,
+                    DepartureDateTime = sr.DepartureDateTime,
+                    ArrivalDateTime = sr.ArrivalDateTime,
+                    HasNextDayArrival = sr.HasNextDayArrival,
                     Amenities = amenities,
                     AvailableSeats = availableSeats,
                     AverageRating = averageRating,
@@ -188,7 +191,7 @@ namespace Tripzo.Controllers
             try
             {
                 // Calculate the correct total amount server-side from selected seats
-                var calculatedTotal = await _bookingRepo.CalculateTotalFareAsync(request.RouteId, request.SelectedSeatIds);
+                var calculatedTotal = await _bookingRepo.CalculateTotalFareAsync(request.RouteId, request.Passengers);
 
                 if (calculatedTotal <= 0)
                     return BadRequest(new { message = "Could not calculate fare. Please verify route and seat selections." });
@@ -238,7 +241,7 @@ namespace Tripzo.Controllers
                     return BadRequest(new { message = "Payment verification failed. Invalid signature." });
 
                 // Step 2: Recalculate total to ensure consistency
-                var calculatedTotal = await _bookingRepo.CalculateTotalFareAsync(request.RouteId, request.SelectedSeatIds);
+                var calculatedTotal = await _bookingRepo.CalculateTotalFareAsync(request.RouteId, request.Passengers);
 
                 if (calculatedTotal <= 0)
                     return BadRequest(new { message = "Could not calculate fare. Please verify route and seat selections." });
@@ -259,7 +262,7 @@ namespace Tripzo.Controllers
                 var result = await _bookingRepo.CreateBookingWithRazorpayAsync(
                     booking,
                     request.BusId,
-                    request.SelectedSeatIds,
+                    request.Passengers,
                     request.RazorpayOrderId,
                     request.RazorpayPaymentId);
 
@@ -274,7 +277,7 @@ namespace Tripzo.Controllers
                     {
                         var pdfBytes = _ticketPdfService.GenerateTicketPdf(ticketDetails);
                         await _emailService.SendTicketEmailAsync(
-                            ticketDetails.PassengerEmail,
+                            request.PrimaryEmail,
                             ticketDetails.PassengerName,
                             pdfBytes,
                             ticketDetails.BookingId);
@@ -424,6 +427,21 @@ namespace Tripzo.Controllers
                 return NotFound(new { message = $"Bus with ID {busId} not found." });
 
             return Ok(feedbackSummary);
+        }
+
+        // 9. Ticket Details: Get full ticket and traveler info for a booking
+        [HttpGet("ticket/{bookingId}")]
+        public async Task<ActionResult<TicketDTO>> GetTicket(int bookingId)
+        {
+            if (bookingId <= 0)
+                return BadRequest(new { message = "Booking ID must be a positive number." });
+
+            var ticket = await _bookingRepo.GetBookingDetailsForTicketAsync(bookingId);
+
+            if (ticket == null)
+                return NotFound(new { message = $"Ticket with ID {bookingId} not found." });
+
+            return Ok(ticket);
         }
     }
 }

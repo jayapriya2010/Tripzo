@@ -28,6 +28,7 @@ public class EmailService : IEmailService
                 <h2>Hi {passengerName},</h2>
                 <p>Thank you for booking with Tripzo! Your ticket is confirmed.</p>
                 <p>Please find your e-ticket attached to this email.</p>
+                <p style="color: #d9534f; font-weight: bold;">Note: Please bring any govt. issued id for verification on the date of travel.</p>
                 <br/>
                 <p>Have a safe journey!</p>
                 <p>– The Tripzo Team</p>
@@ -232,6 +233,52 @@ public class EmailService : IEmailService
                 </div>
                 """
         };
+
+        email.Body = builder.ToMessageBody();
+
+        await SendEmailAsync(email);
+    }
+
+    public async Task SendBusReassignmentEmailAsync(string toEmail, string passengerName, int bookingId, string routeName, DateTime journeyDate, string oldBus, string newBus, byte[] pdfAttachment)
+    {
+        var email = new MimeMessage();
+        email.From.Add(new MailboxAddress(
+            _config["Email:SenderName"] ?? "Tripzo",
+            _config["Email:SenderEmail"]));
+        email.To.Add(new MailboxAddress(passengerName, toEmail));
+        email.Subject = $"Schedule Update: New Bus Assigned - Booking #{bookingId}";
+
+        var builder = new BodyBuilder
+        {
+            HtmlBody = $"""
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2 style="color: #333;">Important Update for your Journey</h2>
+                    <p>Hi {passengerName},</p>
+
+                    <p>Your upcoming journey from <strong>{routeName}</strong> on <strong>{journeyDate:dddd, MMMM dd, yyyy}</strong> has a vehicle update.</p>
+
+                    <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #007bff;">
+                        <p style="margin-top: 0;"><strong>Previous Vehicle:</strong> {oldBus}</p>
+                        <p style="margin-bottom: 0; color: #28a745; font-size: 1.1em;"><strong>New Assigned Vehicle:</strong> {newBus}</p>
+                    </div>
+
+                    <div style="background-color: #e9ecef; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+                        <p style="margin: 0;">We have updated your ticket details automatically. Your seat number and travel time remain the same.</p>
+                    </div>
+
+                    <p><strong>Please find your updated e-ticket attached to this email.</strong></p>
+                    
+                    <p>We apologize for any inconvenience caused by this change and look forward to having you on board.</p>
+
+                    <br/>
+                    <p>Have a safe journey!</p>
+                    <p>– The Tripzo Team</p>
+                </div>
+                """
+        };
+
+        builder.Attachments.Add($"Tripzo_Updated_Ticket_{bookingId}.pdf", pdfAttachment,
+            new ContentType("application", "pdf"));
 
         email.Body = builder.ToMessageBody();
 

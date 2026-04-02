@@ -1,4 +1,4 @@
-import api from './api';
+import api from '../api';
 
 const passengerService = {
   // Search buses
@@ -27,6 +27,9 @@ const passengerService = {
   // Get user feedbacks
   getUserFeedbacks: (userId) => api.get(`/Passenger/feedback/${userId}`),
 
+  // Get bus feedbacks
+  getBusFeedbacks: (busId) => api.get(`/Passenger/feedback/bus/${busId}`),
+
   // Get profile (uses user data stored in localStorage)
   getProfile: () => {
     const user = JSON.parse(localStorage.getItem('user'));
@@ -35,6 +38,9 @@ const passengerService = {
 
   // Update profile
   updateProfile: (userId, payload) => api.put(`/User/${userId}`, payload),
+
+  // Get full ticket details
+  getTicketDetails: (bookingId) => api.get(`/Passenger/ticket/${bookingId}`),
 };
 
 export default passengerService;

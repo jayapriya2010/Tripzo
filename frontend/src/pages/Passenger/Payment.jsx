@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { MdLock, MdCreditCard, MdCheckCircle, MdArrowBack } from 'react-icons/md';
 import PassengerLayout from '../../layouts/PassengerLayout';
-import authService from '../../services/authService';
-import passengerService from '../../services/passengerService';
+import authService from '../../services/auth/authService';
+import passengerService from '../../services/passenger/passengerService';
 
 const Payment = () => {
   const navigate = useNavigate();
@@ -12,6 +12,7 @@ const Payment = () => {
     orderData, busId, routeId, travelDate,
     selectedSeats, boardingStop, droppingStop,
     fromCity, toCity, bus, grandTotal,
+    passengers, primaryEmail,
   } = location.state || {};
 
   const user = authService.getCurrentUser();
@@ -57,13 +58,14 @@ const Payment = () => {
             routeId,
             busId,
             userId: user?.userId,
-            selectedSeatIds: selectedSeats.map(s => s.seatId),
+            passengers,
+            primaryEmail,
             journeyDate: travelDate,
             boardingStopId: parseInt(boardingStop),
             droppingStopId: parseInt(droppingStop),
           };
           const res = await passengerService.verifyPayment(verifyPayload);
-          navigate('/passenger/success', { state: { booking: res.data, fromCity, toCity, bus } });
+          navigate('/passenger/success', { state: { booking: res.data, fromCity, toCity, bus, passengers } });
         } catch (err) {
           setError(err.response?.data?.message || 'Payment verification failed. Contact support.');
         } finally {

@@ -19,6 +19,7 @@ const OperatorSidebar = () => {
     { name: 'Manage Routes', icon: <MdRoute />, path: '/operator/routes' },
     { name: 'Schedule', icon: <MdSchedule />, path: '/operator/schedule' },
     { name: 'Bookings', icon: <MdBook />, path: '/operator/bookings' },
+    { name: 'Feedbacks', icon: <MdFeedback />, path: '/operator/feedbacks' },
     { name: 'Refunds', icon: <MdMoneyOff />, path: '/operator/refunds' },
   ];
 

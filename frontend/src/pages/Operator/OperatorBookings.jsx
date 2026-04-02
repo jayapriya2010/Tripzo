@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { MdBook, MdDirectionsBus, MdPerson, MdEventSeat, MdPayment } from 'react-icons/md';
+import { MdBook, MdDirectionsBus, MdPerson, MdEventSeat, MdPayment, MdInfo, MdPhone, MdLocationOn, MdWc, MdEmail } from 'react-icons/md';
 import operatorService from '../../services/operator/operatorService';
-import authService from '../../services/authService';
+import authService from '../../services/auth/authService';
 
 const OperatorBookings = () => {
   const user = authService.getCurrentUser();
@@ -13,6 +13,8 @@ const OperatorBookings = () => {
   const [loading, setLoading] = useState(true);
   const [fetchingBookings, setFetchingBookings] = useState(false);
   const [error, setError] = useState('');
+  const [selectedPassenger, setSelectedPassenger] = useState(null);
+  const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     const fetchFleet = async () => {
@@ -136,6 +138,7 @@ const OperatorBookings = () => {
                               <th className="border-0 x-small" style={{ fontSize: '0.75rem' }}>PASSENGER</th>
                               <th className="border-0 x-small text-center" style={{ fontSize: '0.75rem' }}>SEAT</th>
                               <th className="border-0 x-small text-end" style={{ fontSize: '0.75rem' }}>AMOUNT</th>
+                              <th className="border-0 x-small text-end" style={{ fontSize: '0.75rem' }}>ACTION</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -158,6 +161,19 @@ const OperatorBookings = () => {
                                   </span>
                                 </td>
                                 <td className="text-end fw-bold small">₹{p.amount.toLocaleString()}</td>
+                                <td className="text-end">
+                                  <button 
+                                    className="btn btn-outline-primary btn-sm rounded-circle p-1" 
+                                    style={{ width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                                    onClick={() => {
+                                      setSelectedPassenger(p);
+                                      setShowModal(true);
+                                    }}
+                                    title="View Details"
+                                  >
+                                    <MdInfo size={16} />
+                                  </button>
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -171,6 +187,74 @@ const OperatorBookings = () => {
           )}
         </div>
       </div>
+
+      {/* Passenger Details Modal */}
+      {showModal && selectedPassenger && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content border-0 shadow-lg" style={{ borderRadius: '1.25rem' }}>
+              <div className="modal-header border-0 pb-0 pt-4 px-4 position-relative">
+                <div className="position-absolute top-0 start-0 w-100" style={{ height: 4, background: 'var(--primary-blue)' }} />
+                <h5 className="modal-title fw-bold d-flex align-items-center gap-2">
+                  <MdPerson className="text-primary" /> Passenger Details
+                </h5>
+                <button type="button" className="btn-close" onClick={() => setShowModal(false)}></button>
+              </div>
+              <div className="modal-body p-4">
+                <div className="mb-4 text-center">
+                  <div className="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center mx-auto mb-2" style={{ width: 64, height: 64 }}>
+                    <MdPerson size={32} />
+                  </div>
+                  <h5 className="fw-bold m-0">{selectedPassenger.passengerName}</h5>
+                  <span className="badge bg-light text-dark border small mt-1">Seat: {selectedPassenger.seatNumber}</span>
+                </div>
+
+                <div className="row g-4">
+                  <div className="col-12">
+                    <div className="p-2 border rounded-3 bg-light">
+                      <label className="text-muted small fw-bold d-block mb-1"><MdEmail className="me-1 text-primary" /> EMAIL</label>
+                      <p className="small text-dark mb-0 fw-semibold" style={{ wordBreak: 'break-all' }}>{selectedPassenger.passengerEmail}</p>
+                    </div>
+                  </div>
+                  <div className="col-6">
+                    <label className="text-muted small fw-bold d-block mb-1"><MdPhone className="me-1" /> PHONE</label>
+                    <p className="small text-dark mb-0">{selectedPassenger.phoneNumber || 'N/A'}</p>
+                  </div>
+                  <div className="col-6 text-end">
+                    <label className="text-muted small fw-bold d-block mb-1 text-end"><MdWc className="me-1" /> GENDER</label>
+                    <p className="small text-dark mb-0">{selectedPassenger.gender || 'N/A'}</p>
+                  </div>
+                  <div className="col-12">
+                    <div className="d-flex justify-content-between align-items-center p-2 rounded-3" style={{ background: 'var(--primary-blue)', color: 'white' }}>
+                      <span className="small fw-bold"><MdPayment className="me-1" /> AMOUNT PAID</span>
+                      <span className="fw-bold">₹{selectedPassenger.amount.toLocaleString()}</span>
+                    </div>
+                  </div>
+                  <div className="col-12">
+                    <hr className="my-2 opacity-50" />
+                  </div>
+                  <div className="col-12">
+                    <div className="d-flex align-items-center gap-3">
+                      <div className="flex-grow-1">
+                        <label className="text-muted small fw-bold d-block mb-1"><MdLocationOn className="me-1 text-success" /> BOARDING</label>
+                        <p className="small text-dark mb-0 fw-semibold">{selectedPassenger.boardingStop}</p>
+                      </div>
+                      <div className="text-muted opacity-25">→</div>
+                      <div className="flex-grow-1 text-end">
+                        <label className="text-muted small fw-bold d-block mb-1"><MdLocationOn className="me-1 text-danger" /> DROPPING</label>
+                        <p className="small text-dark mb-0 fw-semibold">{selectedPassenger.droppingStop}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer border-0 p-4 pt-0">
+                <button type="button" className="btn btn-light w-100 rounded-3 fw-bold" onClick={() => setShowModal(false)}>Close Details</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

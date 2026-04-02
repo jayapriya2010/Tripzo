@@ -12,9 +12,12 @@ namespace Tripzo.DTOs.Passenger
         [Range(1, int.MaxValue, ErrorMessage = "Bus ID must be a positive number.")]
         public int BusId { get; set; }
 
-        [Required(ErrorMessage = "At least one seat must be selected.")]
-        [MinLength(1, ErrorMessage = "At least one seat must be selected.")]
-        public List<int> SelectedSeatIds { get; set; } = [];
+        [Required(ErrorMessage = "At least one passenger detail must be provided.")]
+        public List<PassengerDetailDTO> Passengers { get; set; } = [];
+
+        [Required(ErrorMessage = "Primary email is required.")]
+        [EmailAddress(ErrorMessage = "Invalid email address.")]
+        public string PrimaryEmail { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Journey date is required.")]
         public DateTime JourneyDate { get; set; }

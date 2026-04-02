@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { MdDirectionsBus, MdChair, MdPerson, MdArrowForward, MdArrowBack } from 'react-icons/md';
 import PassengerLayout from '../../layouts/PassengerLayout';
-import authService from '../../services/authService';
-import passengerService from '../../services/passengerService';
+import authService from '../../services/auth/authService';
+import passengerService from '../../services/passenger/passengerService';
 
 const BookingReview = () => {
   const navigate = useNavigate();
@@ -18,33 +18,59 @@ const BookingReview = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const [passengerDetails, setPassengerDetails] = useState({
-    fullName: user?.fullName || '',
-    email: user?.email || '',
-    phone: user?.phoneNumber || '',
-    gender: user?.gender || '',
-  });
+  const [primaryEmail, setPrimaryEmail] = useState(user?.email || '');
+  const [passengers, setPassengers] = useState(
+    (selectedSeats || []).map((seat) => ({
+      seatId: seat.seatId,
+      seatNumber: seat.seatNumber,
+      name: '',
+      age: '',
+      gender: '',
+      phone: '',
+    }))
+  );
+
+  const handlePassengerChange = (index, field, value) => {
+    const updated = [...passengers];
+    updated[index][field] = value;
+    setPassengers(updated);
+  };
 
   const baseFare = totalAmount || 0;
   const tax = parseFloat((baseFare * 0.05).toFixed(2));  // 5% GST
   const grandTotal = baseFare + tax;
 
   const handleProceedToPayment = async () => {
-    if (!passengerDetails.fullName || !passengerDetails.email || !passengerDetails.phone) {
-      setError('Please fill in all passenger details.');
+    if (!primaryEmail) {
+      setError('Primary contact email is required.');
       return;
     }
+
+    const incomplete = passengers.some(p => !p.name || !p.age || !p.gender || !p.phone);
+    if (incomplete) {
+      setError('Please fill in all traveler details.');
+      return;
+    }
+
     setLoading(true);
     setError('');
     try {
       const payload = {
         routeId,
         busId,
-        selectedSeatIds: selectedSeats.map(s => s.seatId),
+        passengers: passengers.map(p => ({
+          seatId: p.seatId,
+          name: p.name,
+          age: parseInt(p.age),
+          gender: p.gender,
+          phone: p.phone,
+        })),
+        primaryEmail,
         journeyDate: travelDate,
         boardingStopId: parseInt(boardingStop),
         droppingStopId: parseInt(droppingStop),
       };
+      
       const res = await passengerService.createOrder(payload);
       navigate('/passenger/payment', {
         state: {
@@ -52,7 +78,8 @@ const BookingReview = () => {
           busId, routeId, travelDate,
           selectedSeats, boardingStop, droppingStop,
           fromCity, toCity, bus,
-          passengerDetails,
+          passengers,
+          primaryEmail,
           grandTotal,
         }
       });
@@ -136,43 +163,67 @@ const BookingReview = () => {
             </div>
           </div>
 
-          {/* Passenger Form */}
-          <div className="tripzo-card">
+          {/* Primary Contact */}
+          <div className="tripzo-card mb-4">
             <h6 className="fw-bold mb-3 d-flex align-items-center gap-2">
-              <MdPerson color="var(--primary-blue)" /> Passenger Details
+              <MdPerson color="var(--primary-blue)" /> Primary Contact (For Ticket)
             </h6>
-            <div className="row g-3">
-              <div className="col-md-6">
-                <label className="form-label small fw-semibold text-muted">FULL NAME</label>
-                <input type="text" className="form-control rounded-3"
-                  value={passengerDetails.fullName}
-                  onChange={e => setPassengerDetails({ ...passengerDetails, fullName: e.target.value })} />
-              </div>
-              <div className="col-md-6">
-                <label className="form-label small fw-semibold text-muted">EMAIL</label>
+            <div className="row">
+              <div className="col-md-12">
+                <label className="form-label small fw-semibold text-muted">PRIMARY EMAIL</label>
                 <input type="email" className="form-control rounded-3"
-                  value={passengerDetails.email}
-                  onChange={e => setPassengerDetails({ ...passengerDetails, email: e.target.value })} />
-              </div>
-              <div className="col-md-6">
-                <label className="form-label small fw-semibold text-muted">PHONE</label>
-                <input type="tel" className="form-control rounded-3"
-                  value={passengerDetails.phone}
-                  onChange={e => setPassengerDetails({ ...passengerDetails, phone: e.target.value })} />
-              </div>
-              <div className="col-md-6">
-                <label className="form-label small fw-semibold text-muted">GENDER</label>
-                <select className="form-select rounded-3"
-                  value={passengerDetails.gender}
-                  onChange={e => setPassengerDetails({ ...passengerDetails, gender: e.target.value })}>
-                  <option value="">Select</option>
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
-                  <option value="Other">Other</option>
-                </select>
+                  placeholder="Enter email to receive ticket"
+                  value={primaryEmail}
+                  onChange={e => setPrimaryEmail(e.target.value)} />
               </div>
             </div>
           </div>
+
+          {/* Individual Travelers */}
+          <h6 className="fw-bold mb-3 mt-4">Traveler Details</h6>
+          {passengers.map((p, idx) => (
+            <div className="tripzo-card mb-3 border-start border-4" key={idx} style={{ borderLeftColor: 'var(--primary-blue) !important' }}>
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <h6 className="fw-bold mb-0 d-flex align-items-center gap-2">
+                  <MdChair className="text-primary" /> Seat {p.seatNumber}
+                </h6>
+              </div>
+              <div className="row g-3">
+                <div className="col-md-6">
+                  <label className="form-label small fw-semibold text-muted">FULL NAME</label>
+                  <input type="text" className="form-control rounded-3"
+                    placeholder="Enter traveler name"
+                    value={p.name}
+                    onChange={e => handlePassengerChange(idx, 'name', e.target.value)} />
+                </div>
+                <div className="col-md-6">
+                  <label className="form-label small fw-semibold text-muted">PHONE NUMBER</label>
+                  <input type="tel" className="form-control rounded-3"
+                    placeholder="Enter phone number"
+                    value={p.phone}
+                    onChange={e => handlePassengerChange(idx, 'phone', e.target.value)} />
+                </div>
+                <div className="col-md-6">
+                  <label className="form-label small fw-semibold text-muted">AGE</label>
+                  <input type="number" className="form-control rounded-3"
+                    placeholder="Enter age"
+                    value={p.age}
+                    onChange={e => handlePassengerChange(idx, 'age', e.target.value)} />
+                </div>
+                <div className="col-md-6">
+                   <label className="form-label small fw-semibold text-muted">GENDER</label>
+                   <select className="form-select rounded-3"
+                     value={p.gender}
+                     onChange={e => handlePassengerChange(idx, 'gender', e.target.value)}>
+                     <option value="">Select</option>
+                     <option value="Male">Male</option>
+                     <option value="Female">Female</option>
+                     <option value="Other">Other</option>
+                   </select>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* Right Column — Fare Summary */}

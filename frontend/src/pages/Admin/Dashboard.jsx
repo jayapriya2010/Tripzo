@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../../layouts/AdminLayout';
 import StatsCard from '../../components/Admin/StatsCard';
 import Table from '../../components/Admin/Table';
-import api from '../../services/api';
+import bookingService from '../../services/admin/bookingService';
+import userService from '../../services/admin/userService';
 import { MdPeople, MdBook, MdAttachMoney, MdRoute } from 'react-icons/md';
 
 const Dashboard = () => {
@@ -22,11 +23,11 @@ const Dashboard = () => {
         const fetchDashboardData = async () => {
             try {
                 const [statsRes, usersRes] = await Promise.all([
-                    api.get('/Admin/dashboard'),
-                    api.get('/Admin/users?pageSize=5')
+                    bookingService.getDashboardStats(),
+                    userService.getUsers({ pageSize: 5 })
                 ]);
-                setStats(statsRes.data);
-                setRecentUsers(usersRes.data.items);
+                setStats(statsRes);
+                setRecentUsers(usersRes.items);
             } catch (error) {
                 console.error('Error fetching dashboard data:', error);
             } finally {

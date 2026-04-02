@@ -16,8 +16,11 @@ namespace Tripzo.Models
 
         [Required]
         public int BoardingStopId { get; set; }
+        public virtual RouteStop BoardingStop { get; set; }
+
         [Required]
         public int DroppingStopId { get; set; }
+        public virtual RouteStop DroppingStop { get; set; }
 
         [Required]
         public DateTime JourneyDate { get; set; }

@@ -19,7 +19,7 @@ namespace Tripzo.Repositories
         
         public async Task<List<ScheduledRouteDTO>> SearchScheduledRoutesAsync(string fromCity, string toCity, DateTime travelDate)
         {
-            return await _context.BusSchedules
+            var results = await _context.BusSchedules
                 .Include(bs => bs.Bus)
                     .ThenInclude(b => b.BusAmenities)
                         .ThenInclude(ba => ba.Amenity)
@@ -30,17 +30,40 @@ namespace Tripzo.Repositories
                 .Where(bs => bs.Route.SourceCity.ToLower() == fromCity.ToLower() &&
                             bs.Route.DestCity.ToLower() == toCity.ToLower() &&
                             bs.ScheduledDate.Date == travelDate.Date &&
-                            bs.IsActive) // Only check if schedule is active, not bus
-                .Select(bs => new ScheduledRouteDTO
+                            bs.IsActive)
+                .ToListAsync();
+
+            return results.Select(bs => {
+                var stops = bs.Route.RouteStops.OrderBy(s => s.StopOrder).ToList();
+                var sourceStop = stops.FirstOrDefault();
+                var destStop = stops.LastOrDefault();
+
+                var departure = bs.ScheduledDate.Date;
+                var arrival = bs.ScheduledDate.Date;
+
+                if (sourceStop != null)
+                {
+                    departure = bs.ScheduledDate.Date.AddDays(sourceStop.DayOffset).Add(sourceStop.ArrivalTime);
+                }
+                
+                if (destStop != null)
+                {
+                    arrival = bs.ScheduledDate.Date.AddDays(destStop.DayOffset).Add(destStop.ArrivalTime);
+                }
+
+                return new ScheduledRouteDTO
                 {
                     ScheduleId = bs.ScheduleId,
                     RouteId = bs.RouteId,
                     BusId = bs.BusId,
                     Bus = bs.Bus,
                     Route = bs.Route,
-                    ScheduledDate = bs.ScheduledDate
-                })
-                .ToListAsync();
+                    ScheduledDate = bs.ScheduledDate,
+                    DepartureDateTime = departure,
+                    ArrivalDateTime = arrival,
+                    HasNextDayArrival = (destStop?.DayOffset ?? 0) > (sourceStop?.DayOffset ?? 0)
+                };
+            }).ToList();
         }
 
         // Legacy search method - kept for compatibility
@@ -105,23 +128,25 @@ namespace Tripzo.Repositories
         }
 
         // 2b. Calculate total fare server-side from selected seats
-        public async Task<decimal> CalculateTotalFareAsync(int routeId, List<int> seatIds)
+        public async Task<decimal> CalculateTotalFareAsync(int routeId, List<PassengerDetailDTO> passengers)
         {
+            var seatIds = passengers.Select(p => p.SeatId).ToList();
             var route = await _context.Routes.FirstOrDefaultAsync(r => r.RouteId == routeId);
             if (route == null) return 0;
-
+ 
             var seats = await _context.SeatConfigs
                 .Where(s => seatIds.Contains(s.SeatId))
                 .ToListAsync();
-
+ 
             // Total = sum of (BaseFare + AddonFare) for each selected seat
             return seats.Sum(s => route.BaseFare + s.AddonFare);
         }
 
         // 3. Create a Booking: Uses a Database Transaction for Atomic Group Booking
         // busId is the scheduled bus for that specific date (may differ from route's default bus)
-        public async Task<Booking> CreateBookingAsync(Booking booking, int busId, List<int> seatIds)
+        public async Task<Booking> CreateBookingAsync(Booking booking, int busId, List<PassengerDetailDTO> passengers)
         {
+            var seatIds = passengers.Select(p => p.SeatId).ToList();
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
@@ -211,13 +236,17 @@ namespace Tripzo.Repositories
                 _context.Bookings.Add(booking);
                 await _context.SaveChangesAsync();
 
-                // 10. Link the selected seats to this booking
-                foreach (var seatId in seatIds)
+                // 10. Link the selected seats to this booking with passenger info
+                foreach (var pass in passengers)
                 {
                     _context.BookedSeats.Add(new BookedSeat
                     {
                         BookingId = booking.BookingId,
-                        SeatId = seatId
+                        SeatId = pass.SeatId,
+                        PassengerName = pass.Name,
+                        PassengerAge = pass.Age,
+                        Gender = pass.Gender,
+                        PassengerPhone = pass.Phone
                     });
                 }
 
@@ -256,8 +285,9 @@ namespace Tripzo.Repositories
         }
 
         // 3b. Create a Booking with Razorpay payment details
-        public async Task<Booking> CreateBookingWithRazorpayAsync(Booking booking, int busId, List<int> seatIds, string razorpayOrderId, string razorpayPaymentId)
+        public async Task<Booking> CreateBookingWithRazorpayAsync(Booking booking, int busId, List<PassengerDetailDTO> passengers, string razorpayOrderId, string razorpayPaymentId)
         {
+            var seatIds = passengers.Select(p => p.SeatId).ToList();
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
@@ -329,13 +359,17 @@ namespace Tripzo.Repositories
                 _context.Bookings.Add(booking);
                 await _context.SaveChangesAsync();
 
-                // 10. Link seats to booking
-                foreach (var seatId in seatIds)
+                // 10. Link seats to booking with passenger info
+                foreach (var pass in passengers)
                 {
                     _context.BookedSeats.Add(new BookedSeat
                     {
                         BookingId = booking.BookingId,
-                        SeatId = seatId
+                        SeatId = pass.SeatId,
+                        PassengerName = pass.Name,
+                        PassengerAge = pass.Age,
+                        Gender = pass.Gender,
+                        PassengerPhone = pass.Phone
                     });
                 }
 
@@ -374,13 +408,41 @@ namespace Tripzo.Repositories
         // 4. Retrieve personal journey history for a specific User
         public async Task<IEnumerable<Booking>> GetPassengerHistoryAsync(int userId)
         {
-            return await _context.Bookings
+            var bookings = await _context.Bookings
                 .Include(b => b.Route)
                     .ThenInclude(r => r.Bus)
                 .Include(b => b.BookedSeats)
                 .Where(b => b.UserId == userId)
                 .OrderByDescending(b => b.JourneyDate)
                 .ToListAsync();
+
+            // Resolve actual scheduled buses for each history item
+            foreach (var b in bookings)
+            {
+                var schedule = await _context.BusSchedules
+                    .Include(bs => bs.Bus)
+                    .FirstOrDefaultAsync(bs => bs.RouteId == b.RouteId && 
+                                              bs.ScheduledDate.Date == b.JourneyDate.Date && 
+                                              bs.IsActive);
+                
+                if (schedule != null && b.Route != null)
+                {
+                    // CRITICAL FIX: create a SHADOW route object for this instance
+                    // This prevents multiple bookings sharing the same Route reference from 
+                    // overwriting each other's bus details in the history list.
+                    b.Route = new Models.Route
+                    {
+                        RouteId = b.Route.RouteId,
+                        BusId = schedule.BusId,
+                        Bus = schedule.Bus, // The reassigned/scheduled bus
+                        SourceCity = b.Route.SourceCity,
+                        DestCity = b.Route.DestCity,
+                        BaseFare = b.Route.BaseFare
+                    };
+                }
+            }
+
+            return bookings;
         }
 
         // 5. Cancel a booking: Updates status and returns details for email notification
@@ -445,11 +507,22 @@ namespace Tripzo.Repositories
                 .Include(b => b.User)
                 .Include(b => b.Route)
                     .ThenInclude(r => r.Bus)
+                .Include(b => b.BoardingStop)
+                .Include(b => b.DroppingStop)
                 .Include(b => b.BookedSeats)
                     .ThenInclude(bs => bs.Seat)
                 .FirstOrDefaultAsync(b => b.BookingId == bookingId);
 
             if (booking == null) return null;
+
+            // Resolve the ACTUAL bus from the schedule for this specific date
+            var schedule = await _context.BusSchedules
+                .Include(bs => bs.Bus)
+                .FirstOrDefaultAsync(bs => bs.RouteId == booking.RouteId && 
+                                          bs.ScheduledDate.Date == booking.JourneyDate.Date && 
+                                          bs.IsActive);
+
+            var effectiveBus = schedule?.Bus ?? booking.Route?.Bus;
 
             return new TicketDTO
             {
@@ -458,12 +531,27 @@ namespace Tripzo.Repositories
                 PassengerEmail = booking.User?.Email ?? "",
                 SourceCity = booking.Route?.SourceCity ?? "",
                 DestCity = booking.Route?.DestCity ?? "",
-                BusName = booking.Route?.Bus?.BusName ?? "",
-                BusNumber = booking.Route?.Bus?.BusNumber ?? "",
+                BusName = effectiveBus?.BusName ?? "",
+                BusNumber = effectiveBus?.BusNumber ?? "",
+                BusType = effectiveBus?.BusType ?? "",
                 JourneyDate = booking.JourneyDate,
+                DepartureDateTime = booking.JourneyDate.Date
+                    .AddDays(booking.BoardingStop?.DayOffset ?? 0)
+                    .Add(booking.BoardingStop?.ArrivalTime ?? TimeSpan.Zero),
+                ArrivalDateTime = booking.JourneyDate.Date
+                    .AddDays(booking.DroppingStop?.DayOffset ?? 0)
+                    .Add(booking.DroppingStop?.ArrivalTime ?? TimeSpan.Zero),
                 SeatNumbers = booking.BookedSeats?.Select(bs => bs.Seat?.SeatNumber ?? "").ToList() ?? [],
                 TotalAmount = booking.TotalAmount,
-                BookingDate = booking.BookingDate
+                BookingDate = booking.BookingDate,
+                Passengers = booking.BookedSeats?.Select(bs => new PassengerDetailDTO
+                {
+                    SeatId = bs.SeatId,
+                    Name = bs.PassengerName,
+                    Age = bs.PassengerAge,
+                    Gender = bs.Gender,
+                    Phone = bs.PassengerPhone
+                }).ToList() ?? []
             };
         }
 
@@ -488,11 +576,19 @@ namespace Tripzo.Repositories
 
             if (existingFeedback) return null;
 
+            // Resolve the ACTUAL bus for this feedback
+            var schedule = await _context.BusSchedules
+                .FirstOrDefaultAsync(bs => bs.RouteId == booking.RouteId && 
+                                          bs.ScheduledDate.Date == booking.JourneyDate.Date && 
+                                          bs.IsActive);
+
+            var busId = schedule?.BusId ?? booking.Route.BusId;
+
             var feedback = new Feedback
             {
                 BookingId = request.BookingId,
                 UserId = userId,
-                BusId = booking.Route.BusId, // Add BusId from the booking's route
+                BusId = busId,
                 Rating = request.Rating,
                 Comment = request.Comment,
                 CreatedAt = DateTime.UtcNow
@@ -510,7 +606,9 @@ namespace Tripzo.Repositories
                 JourneyDate = booking.JourneyDate,
                 Rating = feedback.Rating,
                 Comment = feedback.Comment,
-                CreatedAt = feedback.CreatedAt
+                CreatedAt = feedback.CreatedAt,
+                OperatorResponse = feedback.OperatorResponse,
+                RespondedAt = feedback.RespondedAt
             };
         }
 
@@ -532,7 +630,9 @@ namespace Tripzo.Repositories
                     JourneyDate = f.Booking.JourneyDate,
                     Rating = f.Rating,
                     Comment = f.Comment,
-                    CreatedAt = f.CreatedAt
+                    CreatedAt = f.CreatedAt,
+                    OperatorResponse = f.OperatorResponse,
+                    RespondedAt = f.RespondedAt
                 })
                 .ToListAsync();
         }

@@ -55,5 +55,37 @@ namespace Tripzo.Controllers
 
             return Ok(new { message = $"{dto.Role} registered successfully!" });
         }
+
+        [HttpPut("{id}")]
+        [Authorize]
+        public async Task<IActionResult> UpdateProfile(int id, [FromBody] UserUpdateDTO dto)
+        {
+            var user = await _context.Users.FindAsync(id);
+            if (user == null)
+                return NotFound("User not found.");
+
+            // Basic authorization: user can only update their own profile unless they are an admin
+            var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (userIdClaim != id.ToString() && !User.IsInRole("Admin"))
+            {
+                return Forbid("You are not authorized to update this profile.");
+            }
+
+            // Check if email is being changed and if new email is already taken
+            if (!user.Email.Equals(dto.Email, StringComparison.OrdinalIgnoreCase))
+            {
+                if (await _context.Users.AnyAsync(u => u.Email == dto.Email && u.UserId != id))
+                    return BadRequest("User with this email already exists.");
+            }
+
+            user.FullName = dto.FullName;
+            user.Email = dto.Email.Trim().ToLower();
+            user.PhoneNumber = dto.PhoneNumber;
+            user.Gender = dto.Gender;
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Profile updated successfully!" });
+        }
     }
 }

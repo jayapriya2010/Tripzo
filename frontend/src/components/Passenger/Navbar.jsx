@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MdNotifications, MdAccountCircle, MdLogout, MdSearch } from 'react-icons/md';
-import authService from '../../services/authService';
+import authService from '../../services/auth/authService';
 
 const PassengerNavbar = () => {
   const user = authService.getCurrentUser();

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MdMoneyOff, MdCheckCircle, MdWarning, MdRefresh, MdLock, MdCreditCard, MdError } from 'react-icons/md';
 
 import operatorService from '../../services/operator/operatorService';
-import authService from '../../services/authService';
+import authService from '../../services/auth/authService';
 
 const Refunds = () => {
   const user = authService.getCurrentUser();

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MdDirectionsBus, MdRoute, MdBookOnline, MdTrendingUp, MdEventSeat, MdWarning } from 'react-icons/md';
 import operatorService from '../../services/operator/operatorService';
-import authService from '../../services/authService';
+import authService from '../../services/auth/authService';
 
 const OperatorDashboard = () => {
   const [stats, setStats] = useState(null);

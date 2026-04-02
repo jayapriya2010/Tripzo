@@ -165,29 +165,56 @@ namespace Tripzo.Repositories
         }
 
         // 9. Create a Route and its Stops in one transaction
-        public async Task<bool> DefineRouteWithStopsAsync(Tripzo.Models.Route route, List<RouteStop> stops)
+        public async Task<bool> DefineRouteWithStopsAsync(Tripzo.Models.Route route, List<RouteStop> stops, DateTime? scheduleDate = null)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // Save the main Route
+                // 1. Save the main Route
                 _context.Routes.Add(route);
                 await _context.SaveChangesAsync(); // Generates RouteId
 
-                // Link and save all stops for this journey
+                // 2. Link and save all stops for this journey
                 foreach (var stop in stops)
                 {
                     stop.RouteId = route.RouteId;
                     _context.RouteStops.Add(stop);
                 }
-
                 await _context.SaveChangesAsync();
+
+                // 3. Auto-Schedule if requested
+                if (scheduleDate.HasValue)
+                {
+                    int maxOffset = stops.Any() ? stops.Max(rs => rs.DayOffset) : 0;
+                    
+                    // Re-use logic for checking availability
+                    var availability = await CheckBusAvailabilityAsync(route.BusId, route.RouteId, maxOffset, new List<DateTime> { scheduleDate.Value });
+                    
+                    if (!availability.Success)
+                    {
+                        await transaction.RollbackAsync();
+                        throw new Exception(availability.Message); // Caught by the try-catch block
+                    }
+
+                    var schedule = new BusSchedule
+                    {
+                        RouteId = route.RouteId,
+                        BusId = route.BusId,
+                        ScheduledDate = scheduleDate.Value.Date,
+                        IsActive = true
+                    };
+                    _context.BusSchedules.Add(schedule);
+                    await _context.SaveChangesAsync();
+                }
+
                 await transaction.CommitAsync();
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
                 await transaction.RollbackAsync();
+                // We should ideally bubble up the specific error message, but keeping API signature for now
+                // Logs or similar could go here
                 return false;
             }
         }
@@ -323,65 +350,21 @@ namespace Tripzo.Repositories
 
         public async Task<ScheduleCreationResultDTO> CreateBusSchedulesAsync(int routeId, int busId, List<DateTime> dates)
         {
-            // 1. Sort dates to check for consecutive days in the batch
-            var sortedDates = dates.Select(d => d.Date).OrderBy(d => d).ToList();
-            for (int i = 0; i < sortedDates.Count - 1; i++)
+            // 1. Get the duration (MaxDayOffset) for the route being scheduled
+            var routeStops = await _context.RouteStops
+                .Where(rs => rs.RouteId == routeId)
+                .ToListAsync();
+            
+            int maxOffset = routeStops.Any() ? routeStops.Max(rs => rs.DayOffset) : 0;
+
+            // 2. Perform availability and overlap checks
+            var checkResult = await CheckBusAvailabilityAsync(busId, routeId, maxOffset, dates);
+            if (!checkResult.Success)
             {
-                if ((sortedDates[i + 1] - sortedDates[i]).Days == 1)
-                {
-                    return new ScheduleCreationResultDTO
-                    {
-                        Success = false,
-                        Message = $"Restricted: Cannot schedule the same bus ({busId}) for the same route on consecutive days: {sortedDates[i]:dd MMM} and {sortedDates[i + 1]:dd MMM}."
-                    };
-                }
+                return checkResult;
             }
 
-            foreach (var date in dates)
-            {
-                // 2. Check if the bus is already scheduled for ANY route on this day
-                var existingAnySchedule = await _context.BusSchedules
-                    .Include(bs => bs.Route)
-                    .FirstOrDefaultAsync(bs => bs.BusId == busId && bs.ScheduledDate.Date == date.Date && bs.IsActive);
-                
-                if (existingAnySchedule != null)
-                {
-                    if (existingAnySchedule.RouteId != routeId)
-                    {
-                        return new ScheduleCreationResultDTO
-                        {
-                            Success = false,
-                            Message = $"Conflict: Bus is already scheduled for a different route ({existingAnySchedule.Route.SourceCity} to {existingAnySchedule.Route.DestCity}) on {date:dd MMM yyyy}."
-                        };
-                    }
-                    else
-                    {
-                         return new ScheduleCreationResultDTO
-                         {
-                             Success = false,
-                             Message = $"Already Scheduled: This bus is already allocated to this route on {date:dd MMM yyyy}."
-                         };
-                    }
-                }
-
-                // 3. Check for consecutive days in existing database schedules (Date - 1 or Date + 1)
-                var consecutiveDaySchedule = await _context.BusSchedules
-                    .FirstOrDefaultAsync(bs => bs.BusId == busId && 
-                                          bs.RouteId == routeId && 
-                                          bs.IsActive &&
-                                          (bs.ScheduledDate.Date == date.Date.AddDays(-1) || bs.ScheduledDate.Date == date.Date.AddDays(1)));
-                
-                if (consecutiveDaySchedule != null)
-                {
-                    return new ScheduleCreationResultDTO
-                    {
-                        Success = false,
-                        Message = $"Maintenance Rule: Same bus cannot run the same route on consecutive days. A schedule already exists for {consecutiveDaySchedule.ScheduledDate:dd MMM yyyy}."
-                    };
-                }
-            }
-
-            // If all checks pass, create the schedules
+            // 3. If all checks pass, create the schedules
             var newSchedules = dates.Select(date => new BusSchedule
             {
                 RouteId = routeId,
@@ -516,6 +499,7 @@ namespace Tripzo.Repositories
                 var schedule = await _context.BusSchedules
                     .Include(s => s.Bus)
                     .Include(s => s.Route)
+                        .ThenInclude(r => r.RouteStops)
                     .FirstOrDefaultAsync(s => s.ScheduleId == scheduleId);
 
                 if (schedule == null)
@@ -550,25 +534,25 @@ namespace Tripzo.Repositories
                     };
                 }
 
-                // Check if new bus is already scheduled for this route on this date
-                var conflictingSchedule = await _context.BusSchedules
-                    .AnyAsync(s => s.BusId == newBusId &&
-                                  s.RouteId == schedule.RouteId &&
-                                  s.ScheduledDate.Date == schedule.ScheduledDate.Date &&
-                                  s.IsActive &&
-                                  s.ScheduleId != scheduleId);
+                // 1. Get the duration (MaxDayOffset) for the journey being reassigned
+                int maxOffset = schedule.Route.RouteStops.Any() ? schedule.Route.RouteStops.Max(rs => rs.DayOffset) : 0;
+                var newStart = schedule.ScheduledDate.Date;
+                var newEnd = newStart.AddDays(maxOffset);
 
-                if (conflictingSchedule)
+                // 2. Check for overlaps with other existing schedules for the new bus
+                var availability = await CheckBusAvailabilityAsync(newBusId, schedule.RouteId, maxOffset, new List<DateTime> { schedule.ScheduledDate.Date }, scheduleId);
+                if (!availability.Success)
                 {
                     return new ReassignBusResultDTO
                     {
                         Success = false,
-                        Message = "The new bus is already scheduled for this route on this date."
+                        Message = availability.Message
                     };
                 }
 
                 // Get all active bookings for the old bus on this schedule
                 var bookingsToTransfer = await _context.Bookings
+                    .Include(b => b.User)
                     .Include(b => b.BookedSeats)
                         .ThenInclude(bs => bs.Seat)
                     .Where(b => b.RouteId == schedule.RouteId &&
@@ -615,6 +599,7 @@ namespace Tripzo.Repositories
 
                 var oldBusId = schedule.BusId;
                 var oldBusName = schedule.Bus.BusName;
+                var oldBusNumber = schedule.Bus.BusNumber;
 
                 // Update the schedule to use the new bus
                 schedule.BusId = newBusId;
@@ -629,11 +614,19 @@ namespace Tripzo.Repositories
                     ScheduleId = schedule.ScheduleId,
                     OldBusId = oldBusId,
                     OldBusName = oldBusName,
+                    OldBusNumber = oldBusNumber,
                     NewBusId = newBusId,
                     NewBusName = newBus.BusName,
+                    NewBusNumber = newBus.BusNumber,
                     RouteName = $"{schedule.Route.SourceCity} to {schedule.Route.DestCity}",
                     ScheduledDate = schedule.ScheduledDate,
-                    BookingsTransferred = bookingsToTransfer.Count
+                    BookingsTransferred = bookingsToTransfer.Count,
+                    AffectedBookings = bookingsToTransfer.Select(b => new AffectedBookingDTO
+                    {
+                        BookingId = b.BookingId,
+                        PassengerName = b.User?.FullName ?? "Passenger",
+                        PassengerEmail = b.User?.Email ?? ""
+                    }).ToList()
                 };
             }
             catch (Exception ex)
@@ -740,6 +733,8 @@ namespace Tripzo.Repositories
             {
                 var bookings = await _context.Bookings
                     .Include(b => b.User)
+                    .Include(b => b.BoardingStop)
+                    .Include(b => b.DroppingStop)
                     .Include(b => b.BookedSeats)
                         .ThenInclude(bs => bs.Seat)
                     .Where(b => b.RouteId == schedule.RouteId &&
@@ -755,9 +750,13 @@ namespace Tripzo.Repositories
                     b.BookedSeats.Select(s => new PassengerBookingDetailDTO
                     {
                         BookingId = b.BookingId,
-                        PassengerName = b.User?.FullName ?? "Unknown",
-                        PassengerEmail = b.User?.Email ?? "N/A",
+                        PassengerName = s.PassengerName ?? b.User?.FullName ?? "Unknown",
+                        PassengerEmail = b.User?.Email ?? "N/A", // Account email
+                        PhoneNumber = s.PassengerPhone ?? b.User?.PhoneNumber,
+                        Gender = s.Gender ?? b.User?.Gender,
                         SeatNumber = s.Seat?.SeatNumber ?? "??",
+                        BoardingStop = b.BoardingStop?.LocationName ?? "N/A",
+                        DroppingStop = b.DroppingStop?.LocationName ?? "N/A",
                         Amount = b.TotalAmount / b.BookedSeats.Count,
                         Status = b.Status,
                         BookingDate = b.BookingDate
@@ -977,6 +976,82 @@ namespace Tripzo.Repositories
                     ArrivalTime = s.ArrivalTime
                 }).OrderBy(s => s.StopOrder).ToList()
             };
+        }
+
+        private async Task<ScheduleCreationResultDTO> CheckBusAvailabilityAsync(int busId, int routeId, int maxOffset, List<DateTime> dates, int? excludeScheduleId = null)
+        {
+            // 1. Sort dates to check for overlaps within the batch itself (only applies if multiple dates provided)
+            var sortedDates = dates.Select(d => d.Date).OrderBy(d => d).ToList();
+            if (sortedDates.Count > 1)
+            {
+                for (int i = 0; i < sortedDates.Count - 1; i++)
+                {
+                    var currentDeparture = sortedDates[i];
+                    var currentArrival = currentDeparture.AddDays(maxOffset);
+                    var nextDeparture = sortedDates[i + 1];
+
+                    if (nextDeparture <= currentArrival)
+                    {
+                        return new ScheduleCreationResultDTO
+                        {
+                            Success = false,
+                            Message = $"Wait Time Rule: Journey starting {currentDeparture:dd MMM} takes {maxOffset + 1} day(s) and reaches destination on {currentArrival:dd MMM}. The next run on {nextDeparture:dd MMM} overlaps with the previous journey."
+                        };
+                    }
+                }
+            }
+
+            // 2. Check for overlaps with existing database schedules
+            var minDate = sortedDates.First().AddDays(-10); // buffer
+            var maxDate = sortedDates.Last().AddDays(10);  // buffer
+            var existingSchedules = await _context.BusSchedules
+                .Include(bs => bs.Route)
+                    .ThenInclude(r => r.RouteStops)
+                .Where(bs => bs.BusId == busId && bs.ScheduleId != (excludeScheduleId ?? -1) &&
+                             bs.ScheduledDate.Date >= minDate && bs.ScheduledDate.Date <= maxDate)
+                .ToListAsync();
+
+            foreach (var date in dates)
+            {
+                var newStart = date.Date;
+                var newEnd = newStart.AddDays(maxOffset);
+
+                foreach (var existing in existingSchedules)
+                {
+                    var existingStart = existing.ScheduledDate.Date;
+                    
+                    // Exact match check (Unique Constraint Prevention)
+                    if (existing.RouteId == routeId && existingStart == newStart)
+                    {
+                        return new ScheduleCreationResultDTO
+                        {
+                            Success = false,
+                            Message = existing.IsActive 
+                                ? $"Already Scheduled: This bus is already allocated to this route on {newStart:dd MMM yyyy}."
+                                : $"Conflict: An inactive schedule for this route already exists on {newStart:dd MMM yyyy}."
+                        };
+                    }
+
+                    // Overlap check (Only for active schedules)
+                    if (existing.IsActive)
+                    {
+                        int existingMaxOffset = existing.Route.RouteStops.Any() ? existing.Route.RouteStops.Max(rs => rs.DayOffset) : 0;
+                        var existingEnd = existingStart.AddDays(existingMaxOffset);
+
+                        // Overlap check: Math.Max(Start1, Start2) <= Math.Min(End1, End2)
+                        if (Math.Max(newStart.Ticks, existingStart.Ticks) <= Math.Min(newEnd.Ticks, existingEnd.Ticks))
+                        {
+                            return new ScheduleCreationResultDTO
+                            {
+                                Success = false,
+                                Message = $"Conflict: Bus is still in transit for route '{existing.Route.SourceCity} to {existing.Route.DestCity}'. Trip duration: {existingStart:dd MMM} to {existingEnd:dd MMM}."
+                            };
+                        }
+                    }
+                }
+            }
+
+            return new ScheduleCreationResultDTO { Success = true };
         }
     }
 }

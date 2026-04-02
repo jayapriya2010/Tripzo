@@ -21,7 +21,7 @@ namespace Tripzo.Repositories
         Task<SeatConfigResult> ConfigureBusSeatsAsync(int busId, List<SeatConfig> seats);
 
         // Route & Schedule Management
-        Task<bool> DefineRouteWithStopsAsync(Tripzo.Models.Route route, List<RouteStop> stops);
+        Task<bool> DefineRouteWithStopsAsync(Tripzo.Models.Route route, List<RouteStop> stops, DateTime? scheduleDate = null);
         Task<IEnumerable<Tripzo.Models.Route>> GetBusRoutesAsync(int busId);
 
         // Refund Management

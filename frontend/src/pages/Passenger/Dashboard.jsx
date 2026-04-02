@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   MdSearch, MdDirectionsBus, MdHistory, MdConfirmationNumber,
-  MdCheckCircle, MdCancel, MdPending, MdStar
+  MdCheckCircle, MdCancel, MdPending, MdStar, MdVisibility
 } from 'react-icons/md';
 import PassengerLayout from '../../layouts/PassengerLayout';
-import authService from '../../services/authService';
-import passengerService from '../../services/passengerService';
+import TicketModal from '../../components/Passenger/TicketModal';
+import authService from '../../services/auth/authService';
+import passengerService from '../../services/passenger/passengerService';
 
 const PassengerDashboard = () => {
   const navigate = useNavigate();
@@ -14,6 +15,7 @@ const PassengerDashboard = () => {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchForm, setSearchForm] = useState({ fromCity: '', toCity: '', travelDate: '' });
+  const [viewTicketId, setViewTicketId] = useState(null);
 
   useEffect(() => {
     if (user?.userId) {
@@ -154,8 +156,12 @@ const PassengerDashboard = () => {
                   <p className="text-muted small mb-2">
                     📅 {new Date(ticket.journeyDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                   </p>
-                  <div className="d-flex justify-content-between align-items-center">
+                  <div className="d-flex justify-content-between align-items-center mt-2 pt-2 border-top">
                     <span className="fw-bold" style={{ color: 'var(--primary-blue)' }}>₹{ticket.amount}</span>
+                    <button className="btn btn-sm btn-link text-primary p-0 text-decoration-none fw-bold small d-flex align-items-center gap-1"
+                      onClick={() => setViewTicketId(ticket.bookingId)}>
+                      <MdVisibility size={14} /> View Ticket
+                    </button>
                   </div>
                 </div>
               </div>
@@ -214,6 +220,13 @@ const PassengerDashboard = () => {
           </div>
         )}
       </div>
+      {/* Ticket Modal */}
+      {viewTicketId && (
+        <TicketModal 
+          bookingId={viewTicketId} 
+          onClose={() => setViewTicketId(null)} 
+        />
+      )}
     </PassengerLayout>
   );
 };

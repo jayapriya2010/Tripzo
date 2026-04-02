@@ -18,13 +18,13 @@ namespace Tripzo.Repositories
         Task<int> GetAvailableSeatsCountAsync(int busId, int routeId, DateTime travelDate);
 
         // Calculate total fare server-side from selected seats
-        Task<decimal> CalculateTotalFareAsync(int routeId, List<int> seatIds);
-
+        Task<decimal> CalculateTotalFareAsync(int routeId, List<PassengerDetailDTO> passengers);
+ 
         // Core Booking Transaction (busId is the scheduled bus for that date)
-        Task<Booking> CreateBookingAsync(Booking booking, int busId, List<int> seatIds);
-
+        Task<Booking> CreateBookingAsync(Booking booking, int busId, List<PassengerDetailDTO> passengers);
+ 
         // Razorpay Booking Transaction (includes Razorpay order/payment IDs)
-        Task<Booking> CreateBookingWithRazorpayAsync(Booking booking, int busId, List<int> seatIds, string razorpayOrderId, string razorpayPaymentId);
+        Task<Booking> CreateBookingWithRazorpayAsync(Booking booking, int busId, List<PassengerDetailDTO> passengers, string razorpayOrderId, string razorpayPaymentId);
 
         // Passenger history
         Task<IEnumerable<Booking>> GetPassengerHistoryAsync(int userId);

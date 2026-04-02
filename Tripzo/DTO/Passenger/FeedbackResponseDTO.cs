@@ -10,4 +10,6 @@ public class FeedbackResponseDTO
     public int Rating { get; set; }
     public string? Comment { get; set; }
     public DateTime CreatedAt { get; set; }
+    public string? OperatorResponse { get; set; }
+    public DateTime? RespondedAt { get; set; }
 }

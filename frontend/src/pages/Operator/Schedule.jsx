@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MdSchedule, MdAdd, MdDelete, MdCalendarMonth, MdCheckCircle } from 'react-icons/md';
 import operatorService from '../../services/operator/operatorService';
-import authService from '../../services/authService';
+import authService from '../../services/auth/authService';
 
 const Schedule = () => {
   const user = authService.getCurrentUser();
@@ -273,7 +273,7 @@ const Schedule = () => {
                 <div className="d-grid gap-2">
                   <button 
                     className="btn btn-primary rounded-pill py-3 fw-bold shadow-sm"
-                    onClick={() => navigate(`/operator/schedule/reassign`, { state: { scheduleId: conflictData.scheduleId, routeName: conflictData.routeName, date: conflictData.scheduledDate } })}
+                    onClick={() => navigate(`/operator/schedule/reassign`, { state: { scheduleId: conflictData.scheduleId, routeName: conflictData.routeName, date: conflictData.scheduledDate, currentBusId: conflictData.busId } })}
                   >
                     Reassign to Another Bus
                   </button>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MdArrowBack, MdAdd, MdDelete, MdCheckCircle } from 'react-icons/md';
 import operatorService from '../../services/operator/operatorService';
-import authService from '../../services/authService';
+import authService from '../../services/auth/authService';
 
 const AddRoute = () => {
   const navigate = useNavigate();
@@ -68,17 +68,30 @@ const AddRoute = () => {
         sourceCity: formData.sourceCity,
         destCity: formData.destCity,
         baseFare: parseFloat(formData.baseFare),
-        stops: stops.map(s => {
-          // Handle datetime-local or time input
+        scheduleDate: stops[0].arrivalTime ? stops[0].arrivalTime.split('T')[0] : null,
+        stops: stops.map((s, index) => {
+          // Calculate DayOffset based on the date difference from the first stop
+          let dayOffset = 0;
+          if (index > 0 && stops[0].arrivalTime && s.arrivalTime) {
+            const firstDate = new Date(stops[0].arrivalTime.split('T')[0]);
+            const currentDate = new Date(s.arrivalTime.split('T')[0]);
+            const diffTime = Math.abs(currentDate - firstDate);
+            dayOffset = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            // Safety check: if dates are same, offset is 0
+            if (currentDate.toDateString() === firstDate.toDateString()) dayOffset = 0;
+          }
+          
           let timeVal = s.arrivalTime;
-          if (timeVal.includes('T')) {
+          if (timeVal && timeVal.includes('T')) {
             timeVal = timeVal.split('T')[1];
           }
-          if (timeVal.length === 5) timeVal += ':00'; // Ensure HH:MM:SS
+          if (timeVal && timeVal.length === 5) timeVal += ':00'; // Ensure HH:MM:SS
           
           return {
             ...s,
-            arrivalTime: timeVal
+            arrivalTime: timeVal,
+            dayOffset: dayOffset
           };
         })
       };

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { MdArrowBack, MdEventSeat, MdCheckCircle, MdAdd, MdDelete } from 'react-icons/md';
 import operatorService from '../../services/operator/operatorService';
-import authService from '../../services/authService';
+import authService from '../../services/auth/authService';
 
 const BusConfig = () => {
   const { busId } = useParams();

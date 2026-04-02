@@ -8,5 +8,8 @@ namespace Tripzo.DTOs.Passenger
         public Models.Bus Bus { get; set; } = null!;
         public Models.Route Route { get; set; } = null!;
         public DateTime ScheduledDate { get; set; }
+        public DateTime DepartureDateTime { get; set; }
+        public DateTime ArrivalDateTime { get; set; }
+        public bool HasNextDayArrival { get; set; }
     }
 }
