@@ -21,6 +21,7 @@ namespace Tripzo
             builder.Services.AddControllers();
             builder.Services.AddExceptionHandler<Tripzo.Middleware.GlobalExceptionHandler>();
             builder.Services.AddProblemDetails();
+            builder.Services.AddMemoryCache();
             builder.Services.AddAutoMapper(typeof(AutoMapperProfiles));
 
             builder.Services.AddSwaggerGen(options =>

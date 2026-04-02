@@ -29,6 +29,18 @@ const authService = {
   isAdmin: () => {
     const user = JSON.parse(localStorage.getItem('user'));
     return (user?.role || user?.Role) === 'Admin';
+  },
+
+  forgotPassword: (email) => {
+    return api.post('/Auth/forgot-password', { email });
+  },
+
+  verifyOtp: (email, otp) => {
+    return api.post('/Auth/verify-otp', { email, otp });
+  },
+
+  resetPassword: (payload) => {
+    return api.post('/Auth/reset-password', payload);
   }
 };
 

@@ -17,8 +17,8 @@ public class EmailService : IEmailService
     {
         var email = new MimeMessage();
         email.From.Add(new MailboxAddress(
-            _config["Email:SenderName"],
-            _config["Email:SenderEmail"]));
+            _config["Email:SenderName"] ?? "Tripzo",
+            _config["Email:SenderEmail"] ?? "no-reply@tripzo.com"));
         email.To.Add(new MailboxAddress(passengerName, toEmail));
         email.Subject = $"Your Tripzo Ticket - Booking #{bookingId}";
 
@@ -279,6 +279,52 @@ public class EmailService : IEmailService
 
         builder.Attachments.Add($"Tripzo_Updated_Ticket_{bookingId}.pdf", pdfAttachment,
             new ContentType("application", "pdf"));
+
+        email.Body = builder.ToMessageBody();
+
+        await SendEmailAsync(email);
+    }
+
+    public async Task SendOtpEmailAsync(string toEmail, string userName, string otp)
+    {
+        var email = new MimeMessage();
+        email.From.Add(new MailboxAddress(
+            _config["Email:SenderName"] ?? "Tripzo",
+            _config["Email:SenderEmail"]));
+        email.To.Add(new MailboxAddress(userName, toEmail));
+        email.Subject = "Your Tripzo Verification Code";
+
+        var builder = new BodyBuilder
+        {
+            HtmlBody = $"""
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e1e1e1; border-radius: 10px; overflow: hidden;">
+                    <div style="background-color: #1E63FF; padding: 20px; text-align: center; color: white;">
+                        <h1 style="margin: 0; font-size: 24px;">Tripzo</h1>
+                    </div>
+                    <div style="padding: 30px; line-height: 1.6; color: #333;">
+                        <h2 style="color: #333; margin-top: 0;">Password Reset Request</h2>
+                        <p>Hi {userName},</p>
+                        <p>We received a request to reset your password. Use the following 6-digit verification code to proceed:</p>
+                        
+                        <div style="text-align: center; margin: 30px 0;">
+                            <div style="display: inline-block; padding: 15px 30px; background-color: #f4f7ff; border: 2px dashed #1E63FF; border-radius: 8px;">
+                                <span style="font-size: 32px; font-weight: bold; letter-spacing: 10px; color: #1E63FF;">{otp}</span>
+                            </div>
+                        </div>
+                        
+                        <p>This code is valid for <strong>10 minutes</strong>. If you did not request a password reset, please ignore this email or contact support if you have concerns.</p>
+                        <p>For your security, never share this code with anyone.</p>
+                        
+                        <br/>
+                        <p style="margin-bottom: 0;">Thanks,</p>
+                        <p style="margin-top: 0; font-weight: bold;">The Tripzo Team</p>
+                    </div>
+                    <div style="background-color: #f9f9f9; padding: 20px; text-align: center; border-top: 1px solid #e1e1e1; font-size: 12px; color: #777;">
+                        <p>© 2026 Tripzo. All rights reserved.</p>
+                    </div>
+                </div>
+                """
+        };
 
         email.Body = builder.ToMessageBody();
 

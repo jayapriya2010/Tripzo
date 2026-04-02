@@ -84,6 +84,9 @@ const Login = () => {
                     required
                   />
                 </div>
+                <div className="text-end mt-2">
+                  <Link to="/forgot-password" size={24} className="text-sm text-primary text-decoration-none fw-semibold">Forgot Password?</Link>
+                </div>
               </div>
 
               <button

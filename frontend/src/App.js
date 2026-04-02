@@ -7,6 +7,7 @@ import './styles/theme.css';
 // Auth Pages
 import Login from './pages/Auth/Login';
 import Signup from './pages/Auth/Signup';
+import ForgotPassword from './pages/Auth/ForgotPassword';
 
 // Admin Pages (these self-wrap with AdminLayout)
 import Dashboard from './pages/Admin/Dashboard';
@@ -68,6 +69,7 @@ function App() {
         {/* Public Routes */}
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/" element={<Navigate to="/login" replace />} />
 
         {/* Admin Routes (pages self-wrap with AdminLayout) */}
