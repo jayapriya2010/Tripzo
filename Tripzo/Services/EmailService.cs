@@ -13,7 +13,7 @@ public class EmailService : IEmailService
         _config = config;
     }
 
-    public async Task SendTicketEmailAsync(string toEmail, string passengerName, byte[] pdfAttachment, int bookingId)
+    public async Task SendTicketEmailAsync(string toEmail, string passengerName, byte[] pdfAttachment, int bookingId, string seatNumbers)
     {
         var email = new MimeMessage();
         email.From.Add(new MailboxAddress(
@@ -27,6 +27,7 @@ public class EmailService : IEmailService
             HtmlBody = $"""
                 <h2>Hi {passengerName},</h2>
                 <p>Thank you for booking with Tripzo! Your ticket is confirmed.</p>
+                <p><strong>Booking Detail:</strong> #{bookingId} | <strong>Seat(s):</strong> {seatNumbers}</p>
                 <p>Please find your e-ticket attached to this email.</p>
                 <p style="color: #d9534f; font-weight: bold;">Note: Please bring any govt. issued id for verification on the date of travel.</p>
                 <br/>
@@ -43,7 +44,7 @@ public class EmailService : IEmailService
         await SendEmailAsync(email);
     }
 
-    public async Task SendCancellationRequestEmailAsync(string toEmail, string passengerName, int bookingId, string routeName, DateTime journeyDate, decimal amount)
+    public async Task SendCancellationRequestEmailAsync(string toEmail, string passengerName, int bookingId, string routeName, DateTime journeyDate, decimal amount, string seatNumbers)
     {
         var email = new MimeMessage();
         email.From.Add(new MailboxAddress(
@@ -57,13 +58,12 @@ public class EmailService : IEmailService
             HtmlBody = $"""
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                     <h2 style="color: #333;">Hi {passengerName},</h2>
-
                     <p>We have received your cancellation request for the following booking:</p>
-
                     <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
                         <p><strong>Booking ID:</strong> #{bookingId}</p>
                         <p><strong>Route:</strong> {routeName}</p>
                         <p><strong>Journey Date:</strong> {journeyDate:dddd, MMMM dd, yyyy}</p>
+                        <p><strong>Seat(s) to Cancel:</strong> {seatNumbers}</p>
                         <p><strong>Amount:</strong> ₹{amount:N2}</p>
                     </div>
 
@@ -89,7 +89,7 @@ public class EmailService : IEmailService
         await SendEmailAsync(email);
     }
 
-    public async Task SendCancellationApprovedEmailAsync(string toEmail, string passengerName, int bookingId, string routeName, decimal amount)
+    public async Task SendCancellationApprovedEmailAsync(string toEmail, string passengerName, int bookingId, string routeName, decimal amount, string seatNumbers)
     {
         var email = new MimeMessage();
         email.From.Add(new MailboxAddress(
@@ -109,6 +109,7 @@ public class EmailService : IEmailService
                     <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
                         <p><strong>Booking ID:</strong> #{bookingId}</p>
                         <p><strong>Route:</strong> {routeName}</p>
+                        <p><strong>Seat(s):</strong> {seatNumbers}</p>
                         <p><strong>Refund Amount:</strong> ₹{amount:N2}</p>
                     </div>
 
@@ -134,7 +135,7 @@ public class EmailService : IEmailService
         await SendEmailAsync(email);
     }
 
-    public async Task SendCancellationRejectedEmailAsync(string toEmail, string passengerName, int bookingId, string routeName, DateTime journeyDate, decimal amount)
+    public async Task SendCancellationRejectedEmailAsync(string toEmail, string passengerName, int bookingId, string routeName, DateTime journeyDate, decimal amount, string seatNumbers)
     {
         var email = new MimeMessage();
         email.From.Add(new MailboxAddress(
@@ -148,13 +149,12 @@ public class EmailService : IEmailService
             HtmlBody = $"""
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                     <h2 style="color: #333;">Hi {passengerName},</h2>
-
                     <p>We regret to inform you that your cancellation request has been <strong>rejected</strong>.</p>
-
                     <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
                         <p><strong>Booking ID:</strong> #{bookingId}</p>
                         <p><strong>Route:</strong> {routeName}</p>
                         <p><strong>Journey Date:</strong> {journeyDate:dddd, MMMM dd, yyyy}</p>
+                        <p><strong>Seat(s):</strong> {seatNumbers}</p>
                         <p><strong>Amount:</strong> ₹{amount:N2}</p>
                     </div>
 
@@ -191,7 +191,7 @@ public class EmailService : IEmailService
         await SendEmailAsync(email);
     }
 
-    public async Task SendRefundInitiatedEmailAsync(string toEmail, string passengerName, int bookingId, string routeName, decimal refundAmount)
+    public async Task SendRefundInitiatedEmailAsync(string toEmail, string passengerName, int bookingId, string routeName, decimal refundAmount, string seatNumbers, byte[]? pdfAttachment = null)
     {
         var email = new MimeMessage();
         email.From.Add(new MailboxAddress(
@@ -211,6 +211,7 @@ public class EmailService : IEmailService
                     <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
                         <p><strong>Booking ID:</strong> #{bookingId}</p>
                         <p><strong>Route:</strong> {routeName}</p>
+                        {(!string.IsNullOrEmpty(seatNumbers) ? $"<p><strong>Remaining Seat(s):</strong> {seatNumbers}</p>" : "")}
                         <p><strong>Refund Amount:</strong> ₹{refundAmount:N2}</p>
                     </div>
 
@@ -227,6 +228,8 @@ public class EmailService : IEmailService
                     </div>
 
                     <br/>
+                    { (!string.IsNullOrEmpty(seatNumbers) && pdfAttachment != null ? "<p><strong>Your updated e-ticket is attached to this email.</strong></p>" : "") }
+                    { (string.IsNullOrEmpty(seatNumbers) ? "<p><em>Your entire booking has been cancelled and refunded.</em></p>" : "") }
                     <p>If you don't receive the refund within 5 business days, please contact our support team.</p>
                     <p>Thank you for your patience and for choosing Tripzo.</p>
                     <p>– The Tripzo Team</p>
@@ -234,12 +237,18 @@ public class EmailService : IEmailService
                 """
         };
 
+        if (pdfAttachment != null)
+        {
+            builder.Attachments.Add($"Tripzo_Updated_Ticket_{bookingId}.pdf", pdfAttachment,
+                new ContentType("application", "pdf"));
+        }
+
         email.Body = builder.ToMessageBody();
 
         await SendEmailAsync(email);
     }
 
-    public async Task SendBusReassignmentEmailAsync(string toEmail, string passengerName, int bookingId, string routeName, DateTime journeyDate, string oldBus, string newBus, byte[] pdfAttachment)
+    public async Task SendBusReassignmentEmailAsync(string toEmail, string passengerName, int bookingId, string routeName, DateTime journeyDate, string oldBus, string newBus, byte[] pdfAttachment, string seatNumbers)
     {
         var email = new MimeMessage();
         email.From.Add(new MailboxAddress(
@@ -254,8 +263,8 @@ public class EmailService : IEmailService
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                     <h2 style="color: #333;">Important Update for your Journey</h2>
                     <p>Hi {passengerName},</p>
-
                     <p>Your upcoming journey from <strong>{routeName}</strong> on <strong>{journeyDate:dddd, MMMM dd, yyyy}</strong> has a vehicle update.</p>
+                    <p><strong>Booking Details:</strong> #{bookingId} | <strong>Seat(s):</strong> {seatNumbers}</p>
 
                     <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #007bff;">
                         <p style="margin-top: 0;"><strong>Previous Vehicle:</strong> {oldBus}</p>

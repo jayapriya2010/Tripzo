@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MdClose, MdDownload, MdDirectionsBus, MdPrint } from 'react-icons/md';
+import jsPDF from 'jspdf';
 import passengerService from '../../services/passenger/passengerService';
 
 const TicketModal = ({ bookingId, onClose }) => {
@@ -17,37 +18,141 @@ const TicketModal = ({ bookingId, onClose }) => {
     }
   }, [bookingId]);
 
-  const handleDownloadText = () => {
+  const handleDownloadPDF = () => {
     if (!ticket) return;
-    const passengerInfo = (ticket.passengers || []).map(p => 
-      `Seat ${ticket.seatNumbers[ticket.passengers.indexOf(p)] || '??'}: ${p.name} (${p.age}y, ${p.gender})`
-    ).join('\n');
+    const doc = new jsPDF();
+    const p = ticket.passengers || [];
 
-    const ticketContent = `
-TRIPZO - BUS TICKET
-====================
-PNR: TRPZ${ticket.bookingId}1930599
-Booking ID: ${ticket.bookingId}
-Status: CONFIRMED
+    // Colors
+    const primaryBlue = [30, 99, 255]; // #1E63FF
+    const confirmedGreen = [34, 163, 74]; // Success Green
+    const accentRed = [239, 68, 68]; // Error/Accent Red
+    const textGray = [100, 116, 139]; // Slate 500
 
-Departure: ${ticket.sourceCity} - ${new Date(ticket.departureDateTime).toLocaleString('en-IN')}
-Arrival: ${ticket.destCity} - ${new Date(ticket.arrivalDateTime).toLocaleString('en-IN')}
-Bus: ${ticket.busName} (${ticket.busType}) - ${ticket.busNumber}
-Amount Paid: ₹${ticket.totalAmount}
+    // Header
+    doc.setTextColor(...primaryBlue);
+    doc.setFontSize(24);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Tripzo Bus Ticket', 20, 25);
 
-Travelers:
-${passengerInfo}
-====================
-Note: Please bring any govt. issued id for verification on the date of travel.
-Thank you for travelling with Tripzo!
-    `.trim();
-    const blob = new Blob([ticketContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Tripzo_Ticket_${ticket.bookingId}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(16);
+    doc.text(`#${ticket.bookingId}`, 190, 25, { align: 'right' });
+
+    // Passenger & Journey Info
+    let y = 40;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Passenger', 20, y);
+    doc.text('Journey Date', 110, y);
+
+    y += 7;
+    doc.setFont('helvetica', 'normal');
+    doc.text(ticket.passengerName, 20, y);
+    doc.text(new Date(ticket.departureDateTime).toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }), 110, y);
+    
+    y += 5;
+    doc.setTextColor(...textGray);
+    doc.text(ticket.passengerEmail, 20, y);
+
+    // Route Section
+    y += 10;
+    doc.setDrawColor(226, 232, 240); // #E2E8F0
+    doc.line(20, y, 190, y);
+    
+    y += 10;
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.text('From', 20, y);
+    doc.text('To', 120, y);
+
+    // Arrow
+    doc.setFontSize(14);
+    doc.text('->', 103, y + 2, { align: 'center' });
+
+    y += 8;
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'normal');
+    doc.text(ticket.sourceCity, 20, y);
+    doc.text(ticket.destCity, 120, y);
+
+    y += 8;
+    doc.line(20, y, 190, y);
+
+    // Bus Details & Booked By
+    y += 10;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Bus', 20, y);
+    doc.text('Booked by', 190, y, { align: 'right' });
+
+    y += 7;
+    doc.setFont('helvetica', 'normal');
+    const busInfo = `${ticket.busName} (${ticket.busType})${ticket.busNumber ? ` - ${ticket.busNumber}` : ''}`;
+    doc.text(busInfo, 20, y);
+    doc.text(ticket.passengerName, 190, y, { align: 'right' });
+
+    // Traveler Information
+    y += 15;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text('Traveler Information', 20, y);
+    doc.setDrawColor(0, 0, 0);
+    doc.line(20, y + 1, 60, y + 1); // Underline
+
+    y += 10;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Seat', 20, y);
+    doc.text('Name', 40, y);
+    doc.text('Age', 160, y, { align: 'right' });
+    doc.text('Gender', 190, y, { align: 'right' });
+    
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.5);
+    doc.line(20, y + 2, 190, y + 2);
+
+    y += 8;
+    doc.setFont('helvetica', 'normal');
+    p.forEach((pass, i) => {
+      doc.text(ticket.seatNumbers[i] || '--', 20, y);
+      doc.text(pass.name, 40, y);
+      doc.text(pass.age.toString(), 160, y, { align: 'right' });
+      doc.text(pass.gender, 190, y, { align: 'right' });
+      y += 7;
+    });
+
+    y += 5;
+    doc.line(20, y, 190, y);
+
+    // Amount & Status
+    y += 15;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text('Total Amount', 20, y);
+
+    y += 10;
+    doc.setTextColor(...primaryBlue);
+    doc.setFontSize(20);
+    doc.text(`Rs. ${ticket.totalAmount.toLocaleString('en-IN')}.00`, 20, y);
+
+    doc.setTextColor(...confirmedGreen);
+    doc.setFontSize(12);
+    doc.text('Status: CONFIRMED', 190, y, { align: 'right' });
+
+    // Footer
+    doc.setTextColor(...accentRed);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Note: Please bring any govt. issued id for verification on the date of travel.', 105, 275, { align: 'center' });
+    
+    doc.setTextColor(0, 0, 0);
+    const bookingDate = new Date(ticket.bookingDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    doc.text(`Booked on ${bookingDate} | Thank you for choosing Tripzo!`, 105, 282, { align: 'center' });
+
+    // Save
+    doc.save(`Tripzo_Ticket_${ticket.bookingId}.pdf`);
   };
 
   if (!bookingId) return null;
@@ -184,7 +289,7 @@ Thank you for travelling with Tripzo!
                         </div>
                         <div className="col-12">
                             <button className="btn btn-primary w-100 rounded-3 py-2 fw-semibold d-flex align-items-center justify-content-center gap-2"
-                                onClick={handleDownloadText}>
+                                onClick={handleDownloadPDF}>
                                 <MdDownload size={18} /> Download Ticket
                             </button>
                         </div>

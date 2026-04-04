@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { MdArrowBack, MdEventSeat, MdCheckCircle, MdAdd, MdDelete } from 'react-icons/md';
+import { MdArrowBack, MdEventSeat, MdCheckCircle, MdAdd, MdDelete, MdHotel, MdChair } from 'react-icons/md';
 import operatorService from '../../services/operator/operatorService';
 import authService from '../../services/auth/authService';
 
@@ -60,7 +60,7 @@ const BusConfig = () => {
   };
 
   const addSeatRow = () => {
-    setSeatForm([...seatForm, { seatNumber: '', seatType: 'Window', addonFare: 0 }]);
+    setSeatForm([...seatForm, { seatNumber: '', berth: 'Lower', position: 'Window', category: 'Seater', addonFare: 0 }]);
   };
 
   const removeSeatRow = (index) => {
@@ -70,6 +70,12 @@ const BusConfig = () => {
   const updateSeatRow = (index, field, value) => {
     const updated = [...seatForm];
     updated[index][field] = value;
+    
+    // Requirement: Upper berth is "always sleeper"
+    if (field === 'berth' && value === 'Upper') {
+      updated[index].category = 'Sleeper';
+    }
+    
     setSeatForm(updated);
   };
 
@@ -83,7 +89,7 @@ const BusConfig = () => {
     try {
       await operatorService.configureSeats(busId, seatForm.map(s => ({
         seatNumber: s.seatNumber,
-        seatType: s.seatType,
+        seatType: `${s.berth}|${s.position}|${s.category}`,
         addonFare: parseFloat(s.addonFare) || 0
       })));
       setSuccess('Seats configured successfully!');
@@ -114,18 +120,40 @@ const BusConfig = () => {
     }
   };
 
-  // Build seat grid from existing seats
   const buildSeatGrid = (seats) => {
-    if (!seats || seats.length === 0) return null;
-    // Sort seats by seat number
-    const sorted = [...seats].sort((a, b) => a.seatNumber.localeCompare(b.seatNumber, undefined, { numeric: true }));
-    // Group into rows of 4 (standard bus layout: 2 + aisle + 2)
-    const cols = 4;
-    const rows = [];
-    for (let i = 0; i < sorted.length; i += cols) {
-      rows.push(sorted.slice(i, i + cols));
-    }
-    return rows;
+    if (!seats || seats.length === 0) return { lower: null, upper: null };
+
+    const parseType = (typeStr) => {
+      if (typeStr.includes('|')) {
+        const [berth, pos, cat] = typeStr.split('|');
+        return { berth, pos, cat };
+      }
+      // Fallback for old data
+      return { 
+        berth: typeStr === 'Upper' ? 'Upper' : 'Lower', 
+        pos: ['Window', 'Aisle'].includes(typeStr) ? typeStr : 'Window', 
+        cat: typeStr === 'Upper' ? 'Sleeper' : 'Seater' 
+      };
+    };
+
+    const sortedByNumber = [...seats].sort((a, b) => 
+      a.seatNumber.localeCompare(b.seatNumber, undefined, { numeric: true })
+    );
+
+    const lower = sortedByNumber.filter(s => parseType(s.seatType).berth === 'Lower');
+    const upper = sortedByNumber.filter(s => parseType(s.seatType).berth === 'Upper');
+
+    const organizeIntoRows = (seatList) => {
+      if (seatList.length === 0) return null;
+      const rows = [];
+      const cols = 4;
+      for (let i = 0; i < seatList.length; i += cols) {
+        rows.push(seatList.slice(i, i + cols));
+      }
+      return rows;
+    };
+
+    return { lower: organizeIntoRows(lower), upper: organizeIntoRows(upper) };
   };
 
   if (loading) {
@@ -136,7 +164,7 @@ const BusConfig = () => {
     );
   }
 
-  const seatRows = busDetail?.seats ? buildSeatGrid(busDetail.seats) : null;
+  const { lower: lowerRows, upper: upperRows } = buildSeatGrid(busDetail?.seats || []);
 
   return (
     <div>
@@ -156,7 +184,7 @@ const BusConfig = () => {
 
       <div className="row g-4">
         {/* Pictorial Seat Layout */}
-        <div className="col-lg-7">
+        <div className="col-lg-6">
           <div className="tripzo-card">
             <h6 className="fw-bold mb-3 d-flex align-items-center gap-2"><MdEventSeat /> Seat Layout</h6>
 
@@ -168,89 +196,171 @@ const BusConfig = () => {
               <span className="d-flex align-items-center gap-1 small"><span className="seat-box seat-premium"></span> Premium</span>
             </div>
 
-            {!seatRows || seatRows.length === 0 ? (
+            {(lowerRows || upperRows) ? (
+              <div className="row g-4">
+                {/* Lower Berth Section */}
+                <div className="col-md-6 border-end">
+                  <div className="text-center mb-3">
+                    <span className="badge bg-dark rounded-pill px-3 py-2 fw-bold" style={{ fontSize: '0.75rem', letterSpacing: '1px' }}>LOWER BERTH</span>
+                  </div>
+                  {lowerRows ? (
+                    <div className="seat-grid-container p-3 bg-light rounded-3">
+                      <div className="text-center mb-3 pb-2 border-bottom">
+                        <small className="text-muted fw-bold" style={{ letterSpacing: '1px' }}>🚌 DRIVER</small>
+                      </div>
+                      {lowerRows.map((row, ri) => (
+                        <div className="seat-row d-flex justify-content-center gap-2 mb-2" key={ri}>
+                          {row.map((seat, ci) => {
+                            const isSelected = selectedSeat?.seatId === seat.seatId;
+                            const [berth, pos, cat] = seat.seatType.includes('|') ? seat.seatType.split('|') : ['Lower', 'Window', 'Seater'];
+                            
+                            const seatClass = pos === 'Window' ? 'seat-window'
+                              : seat.addonFare > 0 ? 'seat-premium'
+                              : 'seat-available';
+                            
+                            return (
+                              <React.Fragment key={seat.seatId}>
+                                {ci === 2 && <div className="seat-aisle"></div>}
+                                <div
+                                  className={`seat-cell ${seatClass} ${isSelected ? 'seat-selected' : ''} ${cat === 'Sleeper' ? 'seat-sleeper' : 'seat-seater'}`}
+                                  onClick={() => setSelectedSeat(isSelected ? null : seat)}
+                                  title={`${seat.seatNumber} - ₹${seat.addonFare} (${berth} | ${pos} | ${cat})`}
+                                  style={{ height: cat === 'Sleeper' ? '65px' : '44px' }}
+                                >
+                                  <div className="d-flex flex-column align-items-center">
+                                    {cat === 'Sleeper' ? <MdHotel size={18} className="mb-1" /> : <MdChair size={16} className="mb-1" />}
+                                    <span className="seat-number" style={{ fontSize: '0.6rem' }}>{seat.seatNumber}</span>
+                                  </div>
+                                </div>
+                              </React.Fragment>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 text-muted small">No lower berth seats</div>
+                  )}
+                </div>
+
+                {/* Upper Berth Section */}
+                <div className="col-md-6">
+                  <div className="text-center mb-3">
+                    <span className="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 rounded-pill px-3 py-2 fw-bold" style={{ fontSize: '0.75rem', letterSpacing: '1px' }}>UPPER BERTH</span>
+                  </div>
+                  {upperRows ? (
+                    <div className="seat-grid-container p-3 bg-light rounded-3 shadow-none border">
+                      <div className="text-center mb-3 pb-2 border-bottom">
+                         <small className="text-muted fw-bold invisible" style={{ letterSpacing: '1px' }}>SPACE</small>
+                      </div>
+                      {upperRows.map((row, ri) => (
+                        <div className="seat-row d-flex justify-content-center gap-2 mb-2" key={ri}>
+                          {row.map((seat, ci) => {
+                            const isSelected = selectedSeat?.seatId === seat.seatId;
+                            const [berth, pos, cat] = seat.seatType.includes('|') ? seat.seatType.split('|') : ['Upper', 'Window', 'Sleeper'];
+                            
+                            const seatClass = pos === 'Window' ? 'seat-window'
+                              : seat.addonFare > 0 ? 'seat-premium'
+                              : 'seat-available';
+                            
+                            return (
+                              <React.Fragment key={seat.seatId}>
+                                {ci === 2 && <div className="seat-aisle"></div>}
+                                <div
+                                  className={`seat-cell ${seatClass} ${isSelected ? 'seat-selected' : ''} seat-sleeper`}
+                                  onClick={() => setSelectedSeat(isSelected ? null : seat)}
+                                  title={`${seat.seatNumber} - ₹${seat.addonFare} (${berth} | ${pos} | ${cat})`}
+                                  style={{ height: '65px' }}
+                                >
+                                  <div className="d-flex flex-column align-items-center">
+                                    <MdHotel size={18} className="mb-1" />
+                                    <span className="seat-number" style={{ fontSize: '0.6rem' }}>{seat.seatNumber}</span>
+                                  </div>
+                                </div>
+                              </React.Fragment>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 text-muted small">No upper berth seats</div>
+                  )}
+                </div>
+
+                {/* Selected seat tooltip */}
+                {selectedSeat && (
+                  <div className="col-12 mt-3">
+                    <div className="p-3 bg-white rounded-3 shadow-sm border border-primary border-opacity-10">
+                      <div className="d-flex justify-content-between align-items-center">
+                        <span className="fw-bold fs-5 text-primary">{selectedSeat.seatNumber}</span>
+                        <div className="d-flex gap-2">
+                          {selectedSeat.seatType.split('|').map((tag, i) => (
+                            <span key={i} className="badge bg-light text-dark border">{tag}</span>
+                          ))}
+                        </div>
+                      </div>
+                      <p className="text-muted m-0 mt-1 small">Addon Fare: <strong className="text-success">₹{selectedSeat.addonFare}</strong></p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
               <div className="text-center py-5 bg-light rounded-3">
                 <MdEventSeat size={48} className="text-muted mb-2" style={{ opacity: 0.3 }} />
                 <p className="text-muted m-0">No seats configured yet. Use the form below to add seats.</p>
-              </div>
-            ) : (
-              <div className="seat-grid-container p-3 bg-light rounded-3">
-                {/* Driver section */}
-                <div className="text-center mb-3 pb-2 border-bottom">
-                  <small className="text-muted fw-bold" style={{ letterSpacing: '1px' }}>🚌 DRIVER</small>
-                </div>
-                {seatRows.map((row, ri) => (
-                  <div className="seat-row d-flex justify-content-center gap-2 mb-2" key={ri}>
-                    {row.map((seat, ci) => {
-                      const isSelected = selectedSeat?.seatId === seat.seatId;
-                      const seatClass = seat.seatType === 'Window' ? 'seat-window'
-                        : seat.addonFare > 0 ? 'seat-premium'
-                        : 'seat-available';
-                      return (
-                        <React.Fragment key={seat.seatId}>
-                          {ci === 2 && <div className="seat-aisle"></div>}
-                          <div
-                            className={`seat-cell ${seatClass} ${isSelected ? 'seat-selected' : ''}`}
-                            onClick={() => setSelectedSeat(isSelected ? null : seat)}
-                            title={`${seat.seatNumber} - ₹${seat.addonFare} (${seat.seatType})`}
-                          >
-                            <span className="seat-number">{seat.seatNumber}</span>
-                          </div>
-                        </React.Fragment>
-                      );
-                    })}
-                  </div>
-                ))}
-                {/* Selected seat tooltip */}
-                {selectedSeat && (
-                  <div className="mt-3 p-3 bg-white rounded-3 shadow-sm">
-                    <div className="d-flex justify-content-between">
-                      <span className="fw-bold">{selectedSeat.seatNumber}</span>
-                      <span className="badge bg-primary">{selectedSeat.seatType}</span>
-                    </div>
-                    <p className="text-muted m-0 mt-1 small">Addon Fare: <strong className="text-success">₹{selectedSeat.addonFare}</strong></p>
-                  </div>
-                )}
               </div>
             )}
           </div>
         </div>
 
         {/* Config Forms */}
-        <div className="col-lg-5">
+        <div className="col-lg-6">
           {/* Add Seats Form */}
           <div className="tripzo-card">
             <h6 className="fw-bold mb-3">Add Seats</h6>
             <form onSubmit={handleSubmitSeats}>
               {seatForm.map((seat, i) => (
-                <div className="row g-2 mb-2 align-items-end" key={i}>
-                  <div className="col-4">
-                    <label className="form-label small text-muted">Seat #</label>
-                    <input type="text" className="form-control form-control-sm bg-light border-0" placeholder="1A" value={seat.seatNumber} onChange={e => updateSeatRow(i, 'seatNumber', e.target.value)} required />
+                <div className="row gx-1 mb-2 align-items-end" key={i}>
+                  <div className="col-1">
+                    <label className="form-label mb-1" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#6c757d' }}>Seat</label>
+                    <input type="text" className="form-control form-control-sm bg-light border-0 px-1" placeholder="1A" value={seat.seatNumber} onChange={e => updateSeatRow(i, 'seatNumber', e.target.value)} required />
                   </div>
                   <div className="col-3">
-                    <label className="form-label small text-muted">Type</label>
-                    <select className="form-select form-select-sm bg-light border-0" value={seat.seatType} onChange={e => updateSeatRow(i, 'seatType', e.target.value)}>
-                      <option value="Window">Window</option>
-                      <option value="Aisle">Aisle</option>
+                    <label className="form-label mb-1" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#6c757d' }}>Berth</label>
+                    <select className="form-select form-select-sm bg-light border-0 px-2" style={{ paddingRight: '20px' }} value={seat.berth} onChange={e => updateSeatRow(i, 'berth', e.target.value)}>
                       <option value="Lower">Lower</option>
                       <option value="Upper">Upper</option>
                     </select>
                   </div>
                   <div className="col-3">
-                    <label className="form-label small text-muted">₹ Addon</label>
-                    <input type="number" className="form-control form-control-sm bg-light border-0" value={seat.addonFare} onChange={e => updateSeatRow(i, 'addonFare', e.target.value)} min="0" />
+                    <label className="form-label mb-1" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#6c757d' }}>Pos.</label>
+                    <select className="form-select form-select-sm bg-light border-0 px-2" style={{ paddingRight: '20px' }} value={seat.position} onChange={e => updateSeatRow(i, 'position', e.target.value)}>
+                      <option value="Window">Window</option>
+                      <option value="Aisle">Aisle</option>
+                    </select>
                   </div>
                   <div className="col-2">
-                    <button type="button" className="btn btn-sm btn-outline-danger w-100" onClick={() => removeSeatRow(i)}><MdDelete /></button>
+                    <label className="form-label mb-1" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#6c757d' }}>Type</label>
+                    <select className="form-select form-select-sm bg-light border-0 px-2" style={{ paddingRight: '25px' }} value={seat.category} onChange={e => updateSeatRow(i, 'category', e.target.value)}>
+                      <option value="Seater" disabled={seat.berth === 'Upper'}>Seater</option>
+                      <option value="Sleeper">Sleeper</option>
+                    </select>
+                  </div>
+                  <div className="col-2">
+                    <label className="form-label mb-1" style={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#6c757d' }}>Fare</label>
+                    <input type="number" className="form-control form-control-sm bg-light border-0 px-1 text-center" value={seat.addonFare} onChange={e => updateSeatRow(i, 'addonFare', e.target.value)} min="0" />
+                  </div>
+                  <div className="col-1 text-center">
+                    <button type="button" className="btn btn-sm btn-link text-danger p-0 mb-1" onClick={() => removeSeatRow(i)}><MdDelete size={18} /></button>
                   </div>
                 </div>
               ))}
-              <button type="button" className="btn btn-sm btn-outline-success rounded-pill w-100 mt-2 mb-3" onClick={addSeatRow}>
+              <button type="button" className="btn btn-sm btn-outline-primary rounded-pill w-100 mt-2 mb-3" onClick={addSeatRow}>
                 <MdAdd size={16} /> Add Seat Row
               </button>
               {seatForm.length > 0 && (
-                <button type="submit" className="btn btn-success w-100 rounded-pill" disabled={submittingSeats}>
+                <button type="submit" className="btn btn-primary w-100 rounded-pill shadow-sm" disabled={submittingSeats}>
                   {submittingSeats ? <span className="spinner-border spinner-border-sm me-2"></span> : <MdCheckCircle className="me-2" />}
                   Save Seat Configuration
                 </button>
@@ -270,7 +380,7 @@ const BusConfig = () => {
                   return (
                     <button
                       key={amenity.amenityId}
-                      className={`btn btn-sm rounded-pill px-3 ${isChecked ? 'btn-success' : 'btn-outline-secondary'}`}
+                      className={`btn btn-sm rounded-pill px-3 ${isChecked ? 'btn-primary' : 'btn-outline-secondary'}`}
                       onClick={() => handleToggleAmenity(amenity.amenityId)}
                       disabled={submittingAmenities}
                     >

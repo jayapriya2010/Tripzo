@@ -88,6 +88,9 @@ namespace Tripzo.Repositories
         // Inside BookingRepository.cs
         public async Task<List<SeatLayoutDTO>> GetSeatLayoutAsync(int busId, int routeId, DateTime travelDate)
         {
+            var route = await _context.Routes.FirstOrDefaultAsync(r => r.RouteId == routeId);
+            var baseFare = route?.BaseFare ?? 0;
+
             var allSeats = await _context.SeatConfigs
                 .Where(s => s.BusId == busId)
                 .ToListAsync();
@@ -99,13 +102,35 @@ namespace Tripzo.Repositories
                 .Select(bs => bs.SeatId)
                 .ToListAsync();
 
-            return allSeats.Select(s => new SeatLayoutDTO
-            {
-                SeatId = s.SeatId,
-                SeatNumber = s.SeatNumber,
-                SeatType = s.SeatType, // Ensure this property is mapped!
-                IsAvailable = !occupiedSeatIds.Contains(s.SeatId),
-                FinalPrice = _context.Routes.FirstOrDefault(r => r.RouteId == routeId).BaseFare + s.AddonFare
+            return allSeats.Select(s => {
+                string berth, position, category;
+                
+                if (s.SeatType.Contains("|"))
+                {
+                    var typeParts = s.SeatType.Split('|');
+                    berth = typeParts.Length > 0 ? typeParts[0] : "Lower";
+                    position = typeParts.Length > 1 ? typeParts[1] : "Window";
+                    category = typeParts.Length > 2 ? typeParts[2] : "Seater";
+                }
+                else
+                {
+                    // Fallback for legacy data (simple "Seater", "Sleeper", "Upper", "Lower" strings)
+                    berth = s.SeatType.Equals("Upper", StringComparison.OrdinalIgnoreCase) ? "Upper" : "Lower";
+                    position = "Window"; // Default fallback
+                    category = s.SeatType.Contains("Sleeper", StringComparison.OrdinalIgnoreCase) ? "Sleeper" : "Seater";
+                }
+
+                return new SeatLayoutDTO
+                {
+                    SeatId = s.SeatId,
+                    SeatNumber = s.SeatNumber,
+                    SeatType = s.SeatType,
+                    Berth = berth,
+                    Position = position,
+                    Category = category,
+                    IsAvailable = !occupiedSeatIds.Contains(s.SeatId),
+                    FinalPrice = baseFare + s.AddonFare
+                };
             }).ToList();
         }
 
@@ -404,20 +429,61 @@ namespace Tripzo.Repositories
             }
         }
 
-        // 4. Retrieve personal journey history for a specific User
-        public async Task<IEnumerable<Booking>> GetPassengerHistoryAsync(int userId)
+        // 4. Retrieve personal journey history for a specific User with paging and filters
+        public async Task<Tripzo.DTO.Admin.PagedResultDTO<Booking>> GetPassengerHistoryAsync(int userId, BookingFilterDTO filter)
         {
-            var bookings = await _context.Bookings
+            var query = _context.Bookings
                 .Include(b => b.Route)
                     .ThenInclude(r => r.Bus)
                 .Include(b => b.BookedSeats)
                     .ThenInclude(s => s.Seat)
-                .Where(b => b.UserId == userId)
-                .OrderByDescending(b => b.JourneyDate)
+                .Where(b => b.UserId == userId);
+
+            // Auto-update past confirmed bookings to "Completed"
+            var pastConfirmed = await _context.Bookings
+                .Where(b => b.UserId == userId && b.Status == "Confirmed" && b.JourneyDate.Date < DateTime.Today)
                 .ToListAsync();
 
-            // Resolve actual scheduled buses for each history item
-            foreach (var b in bookings)
+            if (pastConfirmed.Any())
+            {
+                foreach (var b in pastConfirmed)
+                {
+                    b.Status = "Completed";
+                }
+                await _context.SaveChangesAsync();
+            }
+
+            // Filtering
+            if (!string.IsNullOrWhiteSpace(filter.SearchTerm))
+            {
+                var term = filter.SearchTerm.ToLower();
+                query = query.Where(b => 
+                    (b.Route.SourceCity + " to " + b.Route.DestCity).ToLower().Contains(term) ||
+                    (b.Route.Bus.BusNumber).ToLower().Contains(term) ||
+                    (b.Status).ToLower().Contains(term)
+                );
+            }
+
+            // Sorting
+            query = filter.SortBy?.ToLower() switch
+            {
+                "oldest" => query.OrderBy(b => b.JourneyDate),
+                "highprice" => query.OrderByDescending(b => b.TotalAmount),
+                "lowprice" => query.OrderBy(b => b.TotalAmount),
+                "latest" or _ => query.OrderByDescending(b => b.JourneyDate),
+            };
+
+            var totalCount = await query.CountAsync();
+            var pageNumber = Math.Max(1, filter.PageNumber);
+            var pageSize = Math.Clamp(filter.PageSize, 1, 50);
+
+            var items = await query
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            // Resolve actual scheduled buses for the paginated items
+            foreach (var b in items)
             {
                 var schedule = await _context.BusSchedules
                     .Include(bs => bs.Bus)
@@ -427,14 +493,11 @@ namespace Tripzo.Repositories
                 
                 if (schedule != null && b.Route != null)
                 {
-                    // CRITICAL FIX: create a SHADOW route object for this instance
-                    // This prevents multiple bookings sharing the same Route reference from 
-                    // overwriting each other's bus details in the history list.
                     b.Route = new Models.Route
                     {
                         RouteId = b.Route.RouteId,
                         BusId = schedule.BusId,
-                        Bus = schedule.Bus, // The reassigned/scheduled bus
+                        Bus = schedule.Bus,
                         SourceCity = b.Route.SourceCity,
                         DestCity = b.Route.DestCity,
                         BaseFare = b.Route.BaseFare
@@ -442,7 +505,13 @@ namespace Tripzo.Repositories
                 }
             }
 
-            return bookings;
+            return new Tripzo.DTO.Admin.PagedResultDTO<Booking>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                PageNumber = pageNumber,
+                PageSize = pageSize
+            };
         }
 
         // 5. Cancel a booking: Updates status and returns details for email notification
@@ -456,6 +525,7 @@ namespace Tripzo.Repositories
                     .Include(b => b.User)
                     .Include(b => b.Route)
                     .Include(b => b.BookedSeats)
+                        .ThenInclude(s => s.Seat)
                     .FirstOrDefaultAsync(b => b.BookingId == bookingId && b.UserId == userId);
 
                 var allowedStatuses = new[] { "Confirmed", "PartiallyCancelled" };
@@ -539,7 +609,8 @@ namespace Tripzo.Repositories
                     PassengerEmail = booking.User?.Email ?? "",
                     RouteName = $"{booking.Route?.SourceCity} to {booking.Route?.DestCity}",
                     JourneyDate = booking.JourneyDate,
-                    Amount = refundEstimate
+                    Amount = refundEstimate,
+                    SeatNumbers = string.Join(", ", seatsToCancel.Select(s => s.Seat?.SeatNumber ?? "??"))
                 };
             }
             catch

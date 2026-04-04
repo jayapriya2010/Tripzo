@@ -21,6 +21,7 @@ const AddRoute = () => {
     destCity: '',
     baseFare: ''
   });
+  const [selectedBusConfigured, setSelectedBusConfigured] = useState(true);
 
   const [stops, setStops] = useState([
     { cityName: '', locationName: '', stopType: 'Boarding', stopOrder: 1, arrivalTime: '06:00' },
@@ -38,6 +39,28 @@ const AddRoute = () => {
     };
     fetchFleet();
   }, [operatorId]);
+
+  const handleBusChange = async (busId) => {
+    setFormData({ ...formData, busId });
+    if (!busId) {
+      setSelectedBusConfigured(true);
+      return;
+    }
+    
+    try {
+      // Check if bus has seats
+      const res = await operatorService.getBusDetail(busId, operatorId);
+      const isConfigured = res.data.seats && res.data.seats.length > 0;
+      setSelectedBusConfigured(isConfigured);
+      if (!isConfigured) {
+        setError('Selected bus has NO seat configuration. Please configure seats under Manage Buses before creating a route.');
+      } else {
+        setError('');
+      }
+    } catch {
+      setSelectedBusConfigured(false);
+    }
+  };
 
   const addStop = () => {
     setStops([...stops, {
@@ -135,12 +158,18 @@ const AddRoute = () => {
               <h6 className="fw-bold mb-3">General Information</h6>
               <div className="mb-3">
                 <label className="form-label fw-bold small text-muted">ASSIGN ACTIVE BUS</label>
-                <select className="form-select bg-light border-0 rounded-3 p-3" value={formData.busId} onChange={e => setFormData({ ...formData, busId: e.target.value })} required>
+                <select className="form-select bg-light border-0 rounded-3 p-3" value={formData.busId} onChange={e => handleBusChange(e.target.value)} required>
                   <option value="">Select a bus...</option>
                   {fleet.map(bus => (
                     <option key={bus.busId} value={bus.busId}>{bus.busName} ({bus.busNumber}) - {bus.busType}</option>
                   ))}
                 </select>
+                {formData.busId && !selectedBusConfigured && (
+                  <div className="alert alert-warning py-2 px-3 mt-2 small border-0 shadow-sm d-flex align-items-center gap-2">
+                    <MdAdd size={18} className="text-warning" />
+                    <span>This bus has no seats! <button type="button" className="btn btn-link btn-sm p-0 fw-bold" onClick={() => navigate(`/operator/buses/${formData.busId}/config`)}>Configure now</button></span>
+                  </div>
+                )}
                 {fleet.length === 0 && <small className="text-danger mt-1 d-block">No active buses available. Please activate a bus first.</small>}
               </div>
               <div className="row g-3">
@@ -211,7 +240,7 @@ const AddRoute = () => {
               {/* Requirement: Add Stop at the bottom for easy usage */}
               <div className="text-center mt-2 pt-2 border-top">
                 <button type="button" className="btn btn-sm btn-outline-primary rounded-pill px-4" onClick={addStop}>
-                  <MdAdd size={20} className="me-1" /> Add Intermediate Stop
+                  <MdAdd size={20} className="me-1" /> Add Stop
                 </button>
               </div>
             </div>
@@ -220,7 +249,7 @@ const AddRoute = () => {
 
         <div className="mt-4 text-end">
           <button type="button" className="btn btn-light rounded-pill px-4 me-2 fw-bold" onClick={() => navigate('/operator/routes')}>Cancel</button>
-          <button type="submit" className="btn btn-primary rounded-pill px-5 shadow" disabled={submitting}>
+          <button type="submit" className="btn btn-primary rounded-pill px-5 shadow" disabled={submitting || !selectedBusConfigured}>
             {submitting ? <span className="spinner-border spinner-border-sm me-2"></span> : <MdCheckCircle className="me-2" />}
             Create Route Template
           </button>

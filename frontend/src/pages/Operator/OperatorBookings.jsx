@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MdBook, MdDirectionsBus, MdPerson, MdEventSeat, MdPayment, MdInfo, MdPhone, MdLocationOn, MdWc, MdEmail } from 'react-icons/md';
+import { MdBook, MdDirectionsBus, MdPerson, MdEventSeat, MdPayment, MdInfo, MdPhone, MdLocationOn, MdWc, MdEmail, MdSearch, MdFilterList, MdChevronLeft, MdChevronRight } from 'react-icons/md';
 import operatorService from '../../services/operator/operatorService';
 import authService from '../../services/auth/authService';
 
@@ -15,30 +15,77 @@ const OperatorBookings = () => {
   const [error, setError] = useState('');
   const [selectedPassenger, setSelectedPassenger] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  
+  // Fleet Sidebar Pagination & Search
+  const [busSearchTerm, setBusSearchTerm] = useState('');
+  const [fleetCurrentPage, setFleetCurrentPage] = useState(1);
+  const [fleetTotalCount, setFleetTotalCount] = useState(0);
+  const fleetPageSize = 10;
+
+  // Bookings Pagination & Date Filter
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [pageSize, setPageSize] = useState(5);
+  const [filterDate, setFilterDate] = useState('');
 
   useEffect(() => {
-    const fetchFleet = async () => {
-      try {
-        const res = await operatorService.getFleet(operatorId);
-        setFleet(res.data);
-      } catch { setFleet([]); }
-      finally { setLoading(false); }
-    };
     fetchFleet();
-  }, [operatorId]);
+  }, [operatorId, fleetCurrentPage]);
+
+  // Debounced bus search
+  useEffect(() => {
+      const timer = setTimeout(() => {
+          if (fleetCurrentPage !== 1) setFleetCurrentPage(1);
+          else fetchFleet();
+      }, 500);
+      return () => clearTimeout(timer);
+  }, [busSearchTerm]);
+
+  useEffect(() => {
+    if (selectedBus) {
+        handleBusChange(selectedBus);
+    }
+  }, [currentPage, filterDate, pageSize]);
+
+  const fetchFleet = async () => {
+    try {
+      setLoading(true);
+      const res = await operatorService.getFleet(operatorId, { 
+          pageNumber: fleetCurrentPage, 
+          pageSize: fleetPageSize,
+          searchTerm: busSearchTerm 
+      });
+      // Handle both old array response and new PagedResultDTO
+      const items = res.data.items || (Array.isArray(res.data) ? res.data : []);
+      setFleet(items);
+      setFleetTotalCount(res.data.totalCount || items.length);
+    } catch { setFleet([]); setFleetTotalCount(0); }
+    finally { setLoading(false); }
+  };
 
   const handleBusChange = async (busId) => {
-    setSelectedBus(busId);
-    if (!busId) { setBookingData(null); return; }
+    if (busId !== selectedBus) {
+        setSelectedBus(busId);
+        setCurrentPage(1);
+        setFilterDate('');
+        // Return here, the useEffect will trigger the fetch
+        return;
+    }
     
     setFetchingBookings(true);
     setError('');
     try {
-      const res = await operatorService.getBusBookingStatus(busId, operatorId);
+      const res = await operatorService.getBusBookingStatus(busId, operatorId, {
+          pageNumber: currentPage,
+          pageSize: pageSize,
+          filterDate: filterDate || null
+      });
       setBookingData(res.data);
+      setTotalCount(res.data.totalSchedulesCount || 0);
     } catch (err) {
       setError('Failed to fetch bookings for this bus.');
       setBookingData(null);
+      setTotalCount(0);
     } finally {
       setFetchingBookings(false);
     }
@@ -63,9 +110,21 @@ const OperatorBookings = () => {
         {/* Selection Sidebar */}
         <div className="col-lg-4">
           <div className="tripzo-card border-top border-4 border-primary">
-            <h6 className="fw-bold mb-3 d-flex align-items-center gap-2 text-primary">
-              <MdDirectionsBus /> Select Bus
-            </h6>
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <h6 className="fw-bold m-0 d-flex align-items-center gap-2 text-primary">
+                <MdDirectionsBus /> Select Bus
+              </h6>
+            </div>
+            <div className="position-relative mb-3">
+                <MdSearch className="position-absolute top-50 translate-middle-y ms-3 text-muted" />
+                <input 
+                    type="text" 
+                    className="form-control rounded-pill ps-5 border-0 bg-light small" 
+                    placeholder="Search bus name..." 
+                    value={busSearchTerm}
+                    onChange={(e) => setBusSearchTerm(e.target.value)}
+                />
+            </div>
             <div className="list-group list-group-flush">
               {fleet.map(bus => (
                 <button
@@ -84,6 +143,26 @@ const OperatorBookings = () => {
               ))}
               {fleet.length === 0 && <p className="text-muted small text-center py-3">No buses found.</p>}
             </div>
+
+            {fleetTotalCount > fleetPageSize && (
+                <div className="d-flex justify-content-center align-items-center gap-3 mt-3 pt-3 border-top">
+                    <button 
+                        className="btn btn-sm btn-white border shadow-sm rounded-circle p-1" 
+                        disabled={fleetCurrentPage === 1}
+                        onClick={() => setFleetCurrentPage(prev => prev - 1)}
+                    >
+                        <MdChevronLeft size={20} />
+                    </button>
+                    <small className="text-muted fw-bold">Page {fleetCurrentPage}</small>
+                    <button 
+                        className="btn btn-sm btn-white border shadow-sm rounded-circle p-1" 
+                        disabled={fleetCurrentPage >= Math.ceil(fleetTotalCount / fleetPageSize)}
+                        onClick={() => setFleetCurrentPage(prev => prev + 1)}
+                    >
+                        <MdChevronRight size={20} />
+                    </button>
+                </div>
+            )}
           </div>
         </div>
 
@@ -104,6 +183,24 @@ const OperatorBookings = () => {
             <div className="alert alert-danger">{error}</div>
           ) : (
             <>
+              <div className="tripzo-card mb-4 p-3 shadow-sm d-flex justify-content-between align-items-center">
+                  <h6 className="fw-bold m-0 text-primary d-flex align-items-center gap-2">
+                      <MdBook size={20} /> Scheduled Runs & Manifests
+                  </h6>
+                  <div className="d-flex align-items-center gap-2">
+                      <MdFilterList className="text-muted" />
+                      <input 
+                          type="date" 
+                          className="form-control form-control-sm rounded-pill border-0 bg-light" 
+                          value={filterDate}
+                          onChange={(e) => setFilterDate(e.target.value)}
+                      />
+                      {filterDate && (
+                          <button className="btn btn-sm btn-link text-decoration-none text-danger p-0" onClick={() => setFilterDate('')}>Clear</button>
+                      )}
+                  </div>
+              </div>
+
               {(!bookingData?.scheduleBookings || bookingData.scheduleBookings.length === 0) ? (
                 <div className="tripzo-card text-center py-5">
                   <p className="text-muted">No active schedules found for this bus.</p>
@@ -182,6 +279,72 @@ const OperatorBookings = () => {
                     )}
                   </div>
                 ))
+              )}
+
+              {/* Schedules Pagination */}
+              {totalCount > 0 && (
+                  <div className="d-flex justify-content-between align-items-center mt-2 px-2 bg-white rounded-3 p-3 shadow-sm mb-4 border-top">
+                      <div className="d-flex align-items-center gap-2">
+                        <span className="text-muted small fw-bold text-uppercase" style={{ fontSize: '0.65rem' }}>Show:</span>
+                        <select 
+                            className="form-select form-select-sm bg-light border-0 shadow-none rounded-3" 
+                            style={{ width: 'auto', fontSize: '0.75rem' }}
+                            value={pageSize}
+                            onChange={(e) => {
+                                setPageSize(parseInt(e.target.value));
+                                setCurrentPage(1);
+                            }}
+                        >
+                            <option value="5">5</option>
+                            <option value="10">10</option>
+                            <option value="20">20</option>
+                            <option value="50">50</option>
+                        </select>
+                        <small className="text-muted fw-bold" style={{ fontSize: '0.75rem' }}>
+                            {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, totalCount)} of {totalCount}
+                        </small>
+                      </div>
+                      
+                      <div className="d-flex gap-1">
+                          <button 
+                              className="btn btn-xs btn-outline-primary rounded-3 px-2 py-1" 
+                              disabled={currentPage === 1}
+                              onClick={() => setCurrentPage(prev => prev - 1)}
+                              style={{ fontSize: '0.75rem' }}
+                          >
+                              <MdChevronLeft /> Prev
+                          </button>
+                          {(() => {
+                              const totalPages = Math.ceil(totalCount / pageSize);
+                              return Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                                  let page;
+                                  if (totalPages <= 5) page = i + 1;
+                                  else if (currentPage <= 3) page = i + 1;
+                                  else if (currentPage >= totalPages - 2) page = totalPages - 4 + i;
+                                  else page = currentPage - 2 + i;
+                                  
+                                  return (
+                                      <button
+                                          key={page}
+                                          className={`btn btn-xs rounded-3 fw-bold px-2 py-1 ${currentPage === page ? 'btn-primary shadow-sm' : 'btn-outline-primary border-0'}`}
+                                          onClick={() => setCurrentPage(page)}
+                                          style={{ fontSize: '0.75rem', minWidth: '28px' }}
+                                      >
+                                          {page}
+                                      </button>
+                                  );
+                              });
+                          })()}
+                          <button 
+                              className="btn btn-xs btn-outline-primary rounded-3 px-2 py-1" 
+                              disabled={currentPage >= Math.ceil(totalCount / pageSize)}
+                              onClick={() => setCurrentPage(prev => prev + 1)}
+                              style={{ fontSize: '0.75rem' }}
+                          >
+                              Next <MdChevronRight />
+                          </button>
+                      </div>
+                  </div>
               )}
             </>
           )}

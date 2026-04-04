@@ -234,18 +234,30 @@ namespace Tripzo.Controllers
                     // In test mode, Razorpay refunds may behave differently
                 }
             }
-
             // Send refund initiated email to passenger
             if (!string.IsNullOrEmpty(result.PassengerEmail))
             {
                 try
                 {
+                    // Generate updated PDF ticket ONLY for partial cancellations (remaining seats exist)
+                    byte[]? pdfAttachment = null;
+                    if (!string.IsNullOrEmpty(result.SeatNumbers))
+                    {
+                        var ticketDetails = await _bookingRepo.GetBookingDetailsForTicketAsync(result.BookingId);
+                        if (ticketDetails != null)
+                        {
+                            pdfAttachment = _ticketPdfService.GenerateTicketPdf(ticketDetails);
+                        }
+                    }
+
                     await _emailService.SendRefundInitiatedEmailAsync(
                         result.PassengerEmail,
                         result.PassengerName,
                         result.BookingId,
                         result.RouteName,
-                        result.RefundAmount);
+                        result.RefundAmount,
+                        result.SeatNumbers,
+                        pdfAttachment);
                 }
                 catch
                 {
@@ -291,20 +303,27 @@ namespace Tripzo.Controllers
             return Ok(dtos);
         }
 
-        // 11. Fleet View: List all buses belonging to the operator
+        // 11. Fleet View: List all buses belonging to the operator with paging
         [HttpGet("fleet/{operatorId}")]
-        public async Task<ActionResult<IEnumerable<BusDTO>>> GetFleet(int operatorId)
+        public async Task<ActionResult<PagedResultDTO<BusDTO>>> GetFleet(int operatorId, [FromQuery] PaginationFilterDTO filter)
         {
             if (operatorId <= 0)
                 return BadRequest(new { message = "Operator ID must be a positive number." });
 
-            var fleet = await _fleetRepo.GetOperatorFleetAsync(operatorId);
+            var pagedResult = await _fleetRepo.GetOperatorFleetAsync(operatorId, filter);
 
-            if (fleet == null || !fleet.Any())
-                return NotFound(new { message = $"No buses found for Operator ID {operatorId}." });
+            if (pagedResult.Items == null || !pagedResult.Items.Any())
+                return NotFound(new { message = $"No buses found for Operator ID {operatorId} matching your search." });
 
-            var fleetDtos = _mapper.Map<IEnumerable<BusDTO>>(fleet);
-            return Ok(fleetDtos);
+            var fleetDtos = _mapper.Map<IEnumerable<BusDTO>>(pagedResult.Items);
+            
+            return Ok(new PagedResultDTO<BusDTO>
+            {
+                Items = fleetDtos.ToList(),
+                TotalCount = pagedResult.TotalCount,
+                PageNumber = pagedResult.PageNumber,
+                PageSize = pagedResult.PageSize
+            });
         }
 
         // 12. Status Management: Toggle Bus (Soft Delete)
@@ -367,17 +386,17 @@ namespace Tripzo.Controllers
         }
 
         [HttpGet("schedules")]
-        public async Task<ActionResult<List<ScheduleResponseDTO>>> GetSchedules(int operatorId)
+        public async Task<ActionResult<PagedResultDTO<ScheduleResponseDTO>>> GetSchedules([FromQuery] int operatorId, [FromQuery] PaginationFilterDTO filter)
         {
             if (operatorId <= 0)
                 return BadRequest(new { message = "Operator ID must be a positive number." });
 
-            var schedules = await _fleetRepo.GetSchedulesByOperatorAsync(operatorId);
+            var pagedResult = await _fleetRepo.GetSchedulesByOperatorAsync(operatorId, filter);
 
-            if (schedules == null || schedules.Count == 0)
-                return NotFound(new { message = $"No schedules found for Operator ID {operatorId}." });
+            if (pagedResult.Items == null || !pagedResult.Items.Any())
+                return NotFound(new { message = $"No schedules found for Operator ID {operatorId} matching your criteria." });
 
-            var response = schedules.Select(s => new ScheduleResponseDTO
+            var responseItems = pagedResult.Items.Select(s => new ScheduleResponseDTO
             {
                 ScheduleId = s.ScheduleId,
                 RouteName = $"{s.Route.SourceCity} to {s.Route.DestCity}",
@@ -386,7 +405,13 @@ namespace Tripzo.Controllers
                 IsActive = s.IsActive
             }).ToList();
 
-            return Ok(response);
+            return Ok(new PagedResultDTO<ScheduleResponseDTO>
+            {
+                Items = responseItems,
+                TotalCount = pagedResult.TotalCount,
+                PageNumber = pagedResult.PageNumber,
+                PageSize = pagedResult.PageSize
+            });
         }
 
         [HttpGet("schedules/{busId}")]
@@ -476,7 +501,8 @@ namespace Tripzo.Controllers
                                         result.ScheduledDate,
                                         $"{result.OldBusName} ({result.OldBusNumber})",
                                         $"{result.NewBusName} ({result.NewBusNumber})",
-                                        pdfBytes);
+                                        pdfBytes,
+                                        string.Join(", ", ticketDetails.SeatNumbers));
                                 }
                             }
                             catch (Exception)
@@ -547,9 +573,9 @@ namespace Tripzo.Controllers
 
         // Bus Information Endpoints
 
-        // 17. Get booking status for a specific bus
+        // 17. Get booking status for a specific bus with schedule paging
         [HttpGet("buses/{busId}/bookings")]
-        public async Task<ActionResult<BusBookingStatusDTO>> GetBusBookingStatus(int busId, [FromQuery] int operatorId)
+        public async Task<ActionResult<BusBookingStatusDTO>> GetBusBookingStatus(int busId, [FromQuery] int operatorId, [FromQuery] PaginationFilterDTO filter)
         {
             if (busId <= 0)
                 return BadRequest(new { message = "Bus ID must be a positive number." });
@@ -557,7 +583,7 @@ namespace Tripzo.Controllers
             if (operatorId <= 0)
                 return BadRequest(new { message = "Operator ID must be a positive number." });
 
-            var result = await _fleetRepo.GetBusBookingStatusAsync(busId, operatorId);
+            var result = await _fleetRepo.GetBusBookingStatusAsync(busId, operatorId, filter);
 
             if (result == null)
                 return NotFound(new { message = $"Bus with ID {busId} not found or does not belong to this operator." });
@@ -565,19 +591,33 @@ namespace Tripzo.Controllers
             return Ok(result);
         }
 
-        // 18. Get all buses with their routes for an operator
+        // 18. Get all buses with routes for an operator with paging
         [HttpGet("allBuses/{operatorId}")]
-        public async Task<ActionResult<List<OperatorBusListDTO>>> GetAllBusesWithRoutes(int operatorId)
+        public async Task<ActionResult<PagedResultDTO<OperatorBusListDTO>>> GetAllBusesWithRoutes(int operatorId, [FromQuery] PaginationFilterDTO filter)
         {
             if (operatorId <= 0)
                 return BadRequest(new { message = "Operator ID must be a positive number." });
 
-            var buses = await _fleetRepo.GetAllBusesWithRoutesAsync(operatorId);
+            var result = await _fleetRepo.GetAllBusesWithRoutesAsync(operatorId, filter);
 
-            if (buses == null || buses.Count == 0)
-                return NotFound(new { message = $"No buses found for Operator ID {operatorId}." });
+            if (result.Items == null || !result.Items.Any())
+                return NotFound(new { message = $"No buses found for Operator ID {operatorId} matching your criteria." });
 
-            return Ok(buses);
+            return Ok(result);
+        }
+
+        [HttpGet("allRoutes/{operatorId}")]
+        public async Task<ActionResult<PagedResultDTO<OperatorRouteDetailDTO>>> GetOperatorRoutes(int operatorId, [FromQuery] PaginationFilterDTO filter)
+        {
+            if (operatorId <= 0)
+                return BadRequest(new { message = "Operator ID must be a positive number." });
+
+            var result = await _fleetRepo.GetOperatorRoutesAsync(operatorId, filter);
+
+            if (result.Items == null || !result.Items.Any())
+                return NotFound(new { message = $"No routes found for Operator ID {operatorId} matching your search." });
+
+            return Ok(result);
         }
 
         // 19. Get detailed information for a specific bus

@@ -19,8 +19,8 @@ const PassengerDashboard = () => {
 
   useEffect(() => {
     if (user?.userId) {
-      passengerService.getHistory(user.userId)
-        .then(res => setBookings(res.data || []))
+      passengerService.getHistory(user.userId, { pageSize: 10, pageNumber: 1 })
+        .then(res => setBookings(res.data.items || []))
         .catch(() => setBookings([]))
         .finally(() => setLoading(false));
     } else {
@@ -37,6 +37,7 @@ const PassengerDashboard = () => {
   const statusBadge = (status) => {
     const map = {
       Confirmed: { cls: 'badge-active', icon: <MdCheckCircle size={13} /> },
+      Completed: { cls: 'badge-active', icon: <MdCheckCircle size={13} /> },
       Cancelled: { cls: 'badge-inactive', icon: <MdCancel size={13} /> },
       CancellationApproved: { cls: 'badge-inactive', icon: <MdCancel size={13} /> },
     };

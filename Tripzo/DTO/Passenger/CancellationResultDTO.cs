@@ -10,5 +10,6 @@ namespace Tripzo.DTOs.Passenger
         public string RouteName { get; set; } = string.Empty;
         public DateTime JourneyDate { get; set; }
         public decimal Amount { get; set; }
+        public string SeatNumbers { get; set; } = string.Empty;
     }
 }

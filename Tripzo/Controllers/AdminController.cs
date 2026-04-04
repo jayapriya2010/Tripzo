@@ -174,7 +174,8 @@ namespace Tripzo.Controllers
                         result.PassengerName,
                         result.BookingId,
                         result.RouteName,
-                        result.Amount);
+                        result.Amount,
+                        result.SeatNumbers);
                 }
                 catch
                 {
@@ -208,7 +209,8 @@ namespace Tripzo.Controllers
                         result.BookingId,
                         result.RouteName,
                         result.JourneyDate,
-                        result.Amount);
+                        result.Amount,
+                        result.SeatNumbers);
                 }
                 catch
                 {

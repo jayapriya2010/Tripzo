@@ -10,6 +10,11 @@ const MyBookings = () => {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [sortOption, setSortOption] = useState('latest');
   const [cancelling, setCancelling] = useState(null);
   const [toast, setToast] = useState(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -17,20 +22,41 @@ const MyBookings = () => {
   const [selectedSeatIds, setSelectedSeatIds] = useState([]);
   const [cancelReason, setCancelReason] = useState('');
   const [viewTicketId, setViewTicketId] = useState(null);
-  const [sortOption, setSortOption] = useState('latest'); // latest, oldest, highPrice, lowPrice
 
   useEffect(() => {
-    fetchBookings();
-  }, []);
+    const delayDebounceFn = setTimeout(() => {
+      fetchBookings();
+    }, search ? 500 : 0);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [search, sortOption, currentPage, pageSize]);
 
   const fetchBookings = () => {
     if (!user?.userId) { setLoading(false); return; }
     setLoading(true);
-    passengerService.getHistory(user.userId)
-      .then(res => setBookings(res.data || []))
-      .catch(() => setBookings([]))
+    passengerService.getHistory(user.userId, {
+      pageNumber: currentPage,
+      pageSize: pageSize,
+      searchTerm: search,
+      sortBy: sortOption
+    })
+      .then(res => {
+        setBookings(res.data.items || []);
+        setTotalPages(res.data.totalPages || 1);
+        setTotalCount(res.data.totalCount || 0);
+      })
+      .catch(() => {
+        setBookings([]);
+        setTotalPages(1);
+        setTotalCount(0);
+      })
       .finally(() => setLoading(false));
   };
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, sortOption, pageSize]);
 
   const openCancelModal = (booking) => {
     setSelectedBookingId(booking.bookingId);
@@ -80,6 +106,7 @@ const MyBookings = () => {
   const statusBadge = (status) => {
     const map = {
       Confirmed: { cls: 'badge-active', icon: <MdCheckCircle size={13} /> },
+      Completed: { cls: 'badge-active', icon: <MdCheckCircle size={13} /> },
       PartiallyCancelled: { cls: 'badge-pending', icon: <MdPending size={13} /> },
       Cancelled: { cls: 'badge-inactive', icon: <MdCancel size={13} /> },
       CancellationApproved: { cls: 'badge-inactive', icon: <MdCancel size={13} /> },
@@ -92,29 +119,6 @@ const MyBookings = () => {
       </span>
     );
   };
-
-  const filtered = bookings
-    .filter(b => {
-      const searchTerm = search.toLowerCase();
-      return (
-        (b.routeName || '').toLowerCase().includes(searchTerm) ||
-        (b.busNumber || '').toLowerCase().includes(searchTerm) ||
-        (b.status || '').toLowerCase().includes(searchTerm)
-      );
-    })
-    .sort((a, b) => {
-      switch (sortOption) {
-        case 'oldest':
-          return new Date(a.journeyDate) - new Date(b.journeyDate);
-        case 'highPrice':
-          return b.amount - a.amount;
-        case 'lowPrice':
-          return a.amount - b.amount;
-        case 'latest':
-        default:
-          return new Date(b.journeyDate) - new Date(a.journeyDate);
-      }
-    });
 
   const selectedBooking = bookings.find(b => b.bookingId === selectedBookingId);
 
@@ -132,7 +136,7 @@ const MyBookings = () => {
         <h4 className="fw-bold mb-0 d-flex align-items-center gap-2">
           <MdConfirmationNumber color="var(--primary-blue)" /> My Bookings
         </h4>
-        <div className="d-flex align-items-center gap-2 flex-wrap">
+        <div className="d-flex align-items-center gap-3 flex-wrap">
           <div className="position-relative" style={{ minWidth: 240 }}>
             <MdSearch
               className="position-absolute"
@@ -146,6 +150,19 @@ const MyBookings = () => {
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
+          </div>
+          <div className="d-flex align-items-center gap-2">
+            <span className="small text-muted fw-bold text-uppercase" style={{ fontSize: '0.65rem', letterSpacing: '0.5px' }}>Show:</span>
+            <select 
+              className="form-select rounded-3 shadow-none small border-0 bg-light" 
+              style={{ width: 70, fontSize: '0.85rem' }}
+              value={pageSize}
+              onChange={e => setPageSize(parseInt(e.target.value))}
+            >
+              <option value={5}>5</option>
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+            </select>
           </div>
           <div className="d-flex align-items-center gap-2">
             <span className="small text-muted fw-bold text-uppercase" style={{ fontSize: '0.65rem', letterSpacing: '0.5px' }}>Sort By:</span>
@@ -167,60 +184,91 @@ const MyBookings = () => {
       <div className="tripzo-card">
         {loading ? (
           <div className="text-center py-5"><div className="spinner-border text-primary" /></div>
-        ) : filtered.length === 0 ? (
+        ) : bookings.length === 0 ? (
           <div className="text-center py-5">
             <MdConfirmationNumber size={56} color="#CBD5E1" />
             <p className="text-muted mt-2 mb-0">No bookings found.</p>
           </div>
         ) : (
-          <div className="table-container">
-            <table className="table table-hover mb-0">
-              <thead>
-                <tr>
-                  <th>ROUTE</th>
-                  <th>BUS NUMBER</th>
-                  <th>DATE</th>
-                  <th>AMOUNT</th>
-                  <th>STATUS</th>
-                  <th>ACTION</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(b => (
-                  <tr key={b.bookingId}>
-                    <td className="fw-semibold">{b.routeName}</td>
-                    <td className="text-muted">{b.busNumber}</td>
-                    <td>{new Date(b.journeyDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                    <td className="fw-bold" style={{ color: 'var(--primary-blue)' }}>₹{b.amount}</td>
-                    <td>{statusBadge(b.status)}</td>
-                    <td>
-                      <div className="d-flex gap-2">
-                        {(b.status === 'Confirmed' || b.status === 'PartiallyCancelled') && (
-                          <button
-                            className="btn btn-sm btn-outline-primary rounded-3 d-flex align-items-center gap-1"
-                            onClick={() => setViewTicketId(b.bookingId)}>
-                            <MdVisibility size={14} /> Ticket
-                          </button>
-                        )}
-                        {(b.status === 'Confirmed' || b.status === 'PartiallyCancelled') ? (
-                          <button
-                            className="btn btn-sm btn-outline-danger rounded-3"
-                            onClick={() => openCancelModal(b)}
-                            disabled={cancelling === b.bookingId}>
-                            {cancelling === b.bookingId
-                              ? <span className="spinner-border spinner-border-sm" />
-                              : 'Cancel'}
-                          </button>
-                        ) : (
-                          <span className="text-muted small">—</span>
-                        )}
-                      </div>
-                    </td>
+          <>
+            <div className="table-container">
+              <table className="table table-hover mb-0">
+                <thead>
+                  <tr>
+                    <th>ROUTE</th>
+                    <th>BUS NUMBER</th>
+                    <th>DATE</th>
+                    <th>AMOUNT</th>
+                    <th>STATUS</th>
+                    <th>ACTION</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {bookings.map(b => (
+                    <tr key={b.bookingId}>
+                      <td className="fw-semibold">{b.routeName}</td>
+                      <td className="text-muted">{b.busNumber}</td>
+                      <td>{new Date(b.journeyDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                      <td className="fw-bold" style={{ color: 'var(--primary-blue)' }}>₹{b.amount}</td>
+                      <td>{statusBadge(b.status)}</td>
+                      <td>
+                        <div className="d-flex gap-2">
+                          {(b.status === 'Confirmed' || b.status === 'PartiallyCancelled') && (
+                            <button
+                              className="btn btn-sm btn-outline-primary rounded-3 d-flex align-items-center gap-1"
+                              onClick={() => setViewTicketId(b.bookingId)}>
+                              <MdVisibility size={14} /> Ticket
+                            </button>
+                          )}
+                          {(b.status === 'Confirmed' || b.status === 'PartiallyCancelled') ? (
+                            <button
+                              className="btn btn-sm btn-outline-danger rounded-3"
+                              onClick={() => openCancelModal(b)}
+                              disabled={cancelling === b.bookingId}>
+                              {cancelling === b.bookingId
+                                ? <span className="spinner-border spinner-border-sm" />
+                                : 'Cancel'}
+                            </button>
+                          ) : (
+                            <span className="text-muted small">—</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination UI */}
+            {totalPages > 1 && (
+              <div className="d-flex align-items-center justify-content-between p-4 border-top">
+                <div className="small text-muted">
+                  Showing <span className="fw-bold text-dark">{((currentPage - 1) * pageSize) + 1}</span> to <span className="fw-bold text-dark">{Math.min(currentPage * pageSize, totalCount)}</span> of <span className="fw-bold text-dark">{totalCount}</span> entries
+                </div>
+                <nav>
+                  <ul className="pagination pagination-sm mb-0 gap-1">
+                    <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
+                      <button className="page-link rounded-3 border-0 bg-light text-dark px-3" onClick={() => setCurrentPage(prev => prev - 1)}>Prev</button>
+                    </li>
+                    {[...Array(totalPages)].map((_, i) => (
+                      <li key={i} className={`page-item ${currentPage === i + 1 ? 'active' : ''}`}>
+                        <button 
+                          className={`page-link rounded-3 border-0 px-3 ${currentPage === i + 1 ? 'bg-primary text-white shadow-sm' : 'bg-light text-dark'}`}
+                          onClick={() => setCurrentPage(i + 1)}
+                        >
+                          {i + 1}
+                        </button>
+                      </li>
+                    ))}
+                    <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
+                      <button className="page-link rounded-3 border-0 bg-light text-dark px-3" onClick={() => setCurrentPage(prev => prev + 1)}>Next</button>
+                    </li>
+                  </ul>
+                </nav>
+              </div>
+            )}
+          </>
         )}
       </div>
 

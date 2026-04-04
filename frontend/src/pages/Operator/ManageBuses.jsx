@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MdAdd, MdDirectionsBus, MdSettings, MdVisibility } from 'react-icons/md';
+import { MdAdd, MdDirectionsBus, MdSettings, MdVisibility, MdSearch, MdFilterList, MdChevronLeft, MdChevronRight } from 'react-icons/md';
 import operatorService from '../../services/operator/operatorService';
 import authService from '../../services/auth/authService';
 
@@ -13,22 +13,49 @@ const ManageBuses = () => {
   const [toggling, setToggling] = useState(null);
   const [formData, setFormData] = useState({ busName: '', busNumber: '', busCategory: 'AC', busStyle: 'Seater', capacity: '' });
   const [summary, setSummary] = useState(null);
+  
+  // Pagination & Filtering
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [pageSize, setPageSize] = useState(8);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+
   const navigate = useNavigate();
   const user = authService.getCurrentUser();
   const operatorId = user?.userId || user?.UserId;
 
   useEffect(() => { 
     fetchBuses(); 
+  }, [currentPage, statusFilter, pageSize]);
+
+  useEffect(() => {
     fetchSummary();
   }, []);
+
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+        if (currentPage !== 1) setCurrentPage(1);
+        else fetchBuses();
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   const fetchBuses = async () => {
     try {
       setLoading(true);
-      const res = await operatorService.getAllBusesWithRoutes(operatorId);
-      setBuses(res.data);
+      const res = await operatorService.getAllBusesWithRoutes(operatorId, {
+          pageNumber: currentPage,
+          pageSize: pageSize,
+          searchTerm: searchTerm,
+          status: statusFilter
+      });
+      setBuses(res.data.items || []);
+      setTotalCount(res.data.totalCount || 0);
     } catch {
       setBuses([]);
+      setTotalCount(0);
     } finally {
       setLoading(false);
     }
@@ -104,14 +131,14 @@ const ManageBuses = () => {
       <div className="row g-3 mb-4">
         <div className="col-md-3">
           <div className="tripzo-card text-center border-top border-4 border-primary shadow-sm">
-            <h3 className="fw-bold text-primary m-0">{buses.length}</h3>
-            <p className="text-muted m-0 small uppercase fw-bold">Total Buses</p>
+            <h3 className="fw-bold text-primary m-0">{totalCount}</h3>
+            <p className="text-muted m-0 small uppercase fw-bold">Fleet Size</p>
           </div>
         </div>
         <div className="col-md-3">
           <div className="tripzo-card text-center border-top border-4 border-success shadow-sm">
-            <h3 className="fw-bold text-success m-0">{buses.filter(b => b.isActive).length}</h3>
-            <p className="text-muted m-0 small uppercase fw-bold">Active</p>
+            <h3 className="fw-bold text-success m-0">{summary?.totalFeedbacks || totalCount}</h3>
+            <p className="text-muted m-0 small uppercase fw-bold">Total Reviews</p>
           </div>
         </div>
         <div className="col-md-3">
@@ -124,9 +151,41 @@ const ManageBuses = () => {
         </div>
         <div className="col-md-3">
           <div className="tripzo-card text-center border-top border-4 border-info shadow-sm">
-            <h3 className="fw-bold text-info m-0">{summary?.totalFeedbacks || 0}</h3>
-            <p className="text-muted m-0 small uppercase fw-bold">Total Feedbacks</p>
+            <h3 className="fw-bold text-info m-0">{summary?.pendingResponses || 0}</h3>
+            <p className="text-muted m-0 small uppercase fw-bold">Unresponded</p>
           </div>
+        </div>
+      </div>
+
+      {/* Search and Filters */}
+      <div className="tripzo-card mb-4 shadow-sm p-3">
+        <div className="row g-3">
+            <div className="col-md-8">
+                <div className="position-relative">
+                    <MdSearch className="position-absolute top-50 translate-middle-y ms-3 text-muted" size={20} />
+                    <input 
+                        type="text" 
+                        className="form-control rounded-pill ps-5 border-0 bg-light" 
+                        placeholder="Search by bus name or number..." 
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </div>
+            </div>
+            <div className="col-md-4">
+                <div className="d-flex align-items-center gap-2">
+                    <MdFilterList className="text-muted" size={20} />
+                    <select 
+                        className="form-select rounded-pill border-0 bg-light shadow-none"
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                    >
+                        <option value="">All Status</option>
+                        <option value="Active">Active Only</option>
+                        <option value="Inactive">Inactive Only</option>
+                    </select>
+                </div>
+            </div>
         </div>
       </div>
 
@@ -205,6 +264,69 @@ const ManageBuses = () => {
           </div>
         )}
       </div>
+
+      {/* Pagination */}
+      {totalCount > 0 && (
+        <div className="d-flex justify-content-between align-items-center mt-4 px-2">
+          <div className="d-flex align-items-center gap-3">
+            <span className="text-muted small fw-bold text-uppercase" style={{ fontSize: '0.65rem' }}>Show:</span>
+            <select 
+                className="form-select form-select-sm bg-light border-0 shadow-none rounded-3" 
+                style={{ width: 'auto' }}
+                value={pageSize}
+                onChange={(e) => {
+                    setPageSize(parseInt(e.target.value));
+                    setCurrentPage(1);
+                }}
+            >
+                <option value="8">8 per page</option>
+                <option value="16">16 per page</option>
+                <option value="24">24 per page</option>
+                <option value="50">50 per page</option>
+            </select>
+            <span className="text-muted small">
+                Showing {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, totalCount)} of {totalCount}
+            </span>
+          </div>
+          
+          <div className="d-flex gap-2">
+            <button
+                className="btn btn-sm btn-outline-primary rounded-3 d-flex align-items-center gap-1"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(p => p - 1)}
+            >
+                <MdChevronLeft /> Prev
+            </button>
+            {(() => {
+                const totalPages = Math.ceil(totalCount / pageSize);
+                return Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                    let page;
+                    if (totalPages <= 5) page = i + 1;
+                    else if (currentPage <= 3) page = i + 1;
+                    else if (currentPage >= totalPages - 2) page = totalPages - 4 + i;
+                    else page = currentPage - 2 + i;
+                    
+                    return (
+                        <button
+                            key={page}
+                            className={`btn btn-sm rounded-3 fw-bold ${currentPage === page ? 'btn-primary shadow-sm' : 'btn-outline-primary border-0'}`}
+                            onClick={() => setCurrentPage(page)}
+                        >
+                            {page}
+                        </button>
+                    );
+                });
+            })()}
+            <button
+                className="btn btn-sm btn-outline-primary rounded-3 d-flex align-items-center gap-1"
+                disabled={currentPage >= Math.ceil(totalCount / pageSize)}
+                onClick={() => setCurrentPage(p => p + 1)}
+            >
+                Next <MdChevronRight />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Add Bus Modal */}
       {showModal && (

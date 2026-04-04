@@ -1,7 +1,9 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { MdCheckCircle, MdDownload, MdDashboard, MdDirectionsBus } from 'react-icons/md';
+import jsPDF from 'jspdf';
 import PassengerLayout from '../../layouts/PassengerLayout';
+import authService from '../../services/auth/authService';
 
 const BookingSuccess = () => {
   const navigate = useNavigate();
@@ -21,35 +23,143 @@ const BookingSuccess = () => {
      );
    }
  
-   const handleDownloadTicket = () => {
-    const passengerInfo = (passengers || []).map(p => 
-      `Seat ${p.seatNumber}: ${p.name} (${p.age}y, ${p.gender})`
-    ).join('\n');
+    const handleDownloadTicket = () => {
+      const doc = new jsPDF();
+      const p = passengers || [];
+      const user = authService.getCurrentUser();
 
-     const ticketContent = `
- TRIPZO - BUS TICKET
- ====================
- PNR: ${booking.pnr}
- Booking ID: ${booking.bookingId}
- Status: ${booking.status}
- 
- Route: ${fromCity} → ${toCity}
- Bus: ${bus?.busName || '—'}
- Amount Paid: ₹${booking.totalAmount}
+      // Colors
+      const primaryBlue = [30, 99, 255]; // #1E63FF
+      const confirmedGreen = [34, 163, 74]; // Success Green
+      const accentRed = [239, 68, 68]; // Error/Accent Red
+      const textGray = [100, 116, 139]; // Slate 500
 
- Travelers:
- ${passengerInfo}
- ====================
- Thank you for travelling with Tripzo!
-     `.trim();
-    const blob = new Blob([ticketContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Tripzo_Ticket_${booking.pnr}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+      // Header
+      doc.setTextColor(...primaryBlue);
+      doc.setFontSize(24);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Tripzo Bus Ticket', 20, 25);
+
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(16);
+      doc.text(`#${booking.bookingId}`, 190, 25, { align: 'right' });
+
+      // Passenger & Journey Info
+      let y = 40;
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Passenger', 20, y);
+      doc.text('Journey Date', 110, y);
+
+      y += 7;
+      doc.setFont('helvetica', 'normal');
+      doc.text(user?.fullName || 'Guest', 20, y);
+      const journeyDateObj = new Date(bus.departureDateTime);
+      doc.text(journeyDateObj.toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }), 110, y);
+      
+      y += 5;
+      doc.setTextColor(...textGray);
+      doc.text(user?.email || '', 20, y);
+
+      // Route Section
+      y += 10;
+      doc.setDrawColor(226, 232, 240); // #E2E8F0
+      doc.line(20, y, 190, y);
+      
+      y += 10;
+      doc.setFontSize(10);
+      doc.setTextColor(0, 0, 0);
+      doc.setFont('helvetica', 'bold');
+      doc.text('From', 20, y);
+      doc.text('To', 110, y);
+
+      // Arrow
+      doc.setFontSize(14);
+      doc.text('-->', 103, y + 2, { align: 'center' });
+
+      y += 8;
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'normal');
+      doc.text(fromCity, 20, y);
+      doc.text(toCity, 110, y);
+
+      y += 8;
+      doc.line(20, y, 190, y);
+
+      // Bus Details & Booked By
+      y += 10;
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Bus', 20, y);
+      doc.text('Booked by', 190, y, { align: 'right' });
+
+      y += 7;
+      doc.setFont('helvetica', 'normal');
+      const busInfo = `${bus?.busName} (${bus?.busType})${bus?.busNumber ? ` - ${bus?.busNumber}` : ''}`;
+      doc.text(busInfo, 20, y);
+      doc.text(user?.fullName || 'Guest', 190, y, { align: 'right' });
+
+      // Traveler Information
+      y += 15;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.text('Traveler Information', 20, y);
+      doc.setDrawColor(0, 0, 0);
+      doc.line(20, y + 1, 60, y + 1); // Underline
+
+      y += 10;
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Seat', 20, y);
+      doc.text('Name', 40, y);
+      doc.text('Age', 160, y, { align: 'right' });
+      doc.text('Gender', 190, y, { align: 'right' });
+      
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.5);
+      doc.line(20, y + 2, 190, y + 2);
+
+      y += 8;
+      doc.setFont('helvetica', 'normal');
+      p.forEach((pass) => {
+        doc.text(pass.seatNumber, 20, y);
+        doc.text(pass.name, 40, y);
+        doc.text(pass.age.toString(), 160, y, { align: 'right' });
+        doc.text(pass.gender, 190, y, { align: 'right' });
+        y += 7;
+      });
+
+      y += 5;
+      doc.line(20, y, 190, y);
+
+      // Amount & Status
+      y += 15;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text('Total Amount', 20, y);
+
+      y += 10;
+      doc.setTextColor(...primaryBlue);
+      doc.setFontSize(20);
+      doc.text(`Rs. ${booking.totalAmount.toLocaleString('en-IN')}.00`, 20, y);
+
+      doc.setTextColor(...confirmedGreen);
+      doc.setFontSize(12);
+      doc.text(`Status: ${booking.status.toUpperCase()}`, 190, y, { align: 'right' });
+
+      // Footer
+      doc.setTextColor(...accentRed);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Note: Please bring any govt. issued id for verification on the date of travel.', 105, 275, { align: 'center' });
+      
+      doc.setTextColor(0, 0, 0);
+      const bDate = new Date(booking.bookingDate || new Date()).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      doc.text(`Booked on ${bDate} | Thank you for choosing Tripzo!`, 105, 282, { align: 'center' });
+
+      // Save
+      doc.save(`Tripzo_Ticket_${booking.pnr}.pdf`);
+    };
 
   return (
     <PassengerLayout>

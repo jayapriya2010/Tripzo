@@ -40,6 +40,9 @@ const BookingReview = () => {
   const tax = parseFloat((baseFare * 0.05).toFixed(2));  // 5% GST
   const grandTotal = baseFare + tax;
 
+  const boardingPointObj = bus?.boardingStops?.find(s => s.stopId === parseInt(boardingStop));
+  const droppingPointObj = bus?.droppingStops?.find(s => s.stopId === parseInt(droppingStop));
+
   const handleProceedToPayment = async () => {
     if (!primaryEmail) {
       setError('Primary contact email is required.');
@@ -119,7 +122,9 @@ const BookingReview = () => {
               </div>
               <div className="text-center">
                 <div className="fw-bold fs-5">{toCity}</div>
-                <div className="text-muted small">Arrival</div>
+                <div className="text-muted small">
+                  {droppingPointObj ? droppingPointObj.arrivalTime.slice(0, 5) : 'Arrival'}
+                </div>
               </div>
             </div>
             <div className="row g-3 mt-2">
@@ -135,11 +140,15 @@ const BookingReview = () => {
               </div>
               <div className="col-6">
                 <p className="small text-muted mb-0">Boarding Point</p>
-                <p className="fw-semibold mb-0">{boardingStop ? `Stop #${boardingStop}` : '—'}</p>
+                <p className="fw-semibold mb-0">
+                  {boardingPointObj ? `${boardingPointObj.locationName} (${boardingPointObj.cityName})` : '—'}
+                </p>
               </div>
               <div className="col-6">
                 <p className="small text-muted mb-0">Dropping Point</p>
-                <p className="fw-semibold mb-0">{droppingStop ? `Stop #${droppingStop}` : '—'}</p>
+                <p className="fw-semibold mb-0">
+                  {droppingPointObj ? `${droppingPointObj.locationName} (${droppingPointObj.cityName})` : '—'}
+                </p>
               </div>
             </div>
           </div>

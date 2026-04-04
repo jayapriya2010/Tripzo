@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MdSchedule, MdAdd, MdDelete, MdCalendarMonth, MdCheckCircle } from 'react-icons/md';
+import { MdSchedule, MdAdd, MdDelete, MdCalendarMonth, MdCheckCircle, MdSearch, MdFilterList, MdChevronLeft, MdChevronRight } from 'react-icons/md';
 import operatorService from '../../services/operator/operatorService';
 import authService from '../../services/auth/authService';
 
@@ -24,36 +24,89 @@ const Schedule = () => {
   const [conflictData, setConflictData] = useState(null);
   const [showConflictModal, setShowConflictModal] = useState(false);
   const [showReactivateModal, setShowReactivateModal] = useState(false);
+  const [selectedBusConfigured, setSelectedBusConfigured] = useState(true);
+  
+  // Pagination & Filtering
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterDate, setFilterDate] = useState('');
+
   const navigate = useNavigate();
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { 
+    fetchInitialData(); 
+  }, []);
 
-  const fetchData = async () => {
+  useEffect(() => {
+    fetchSchedules();
+  }, [currentPage, filterDate, pageSize]);
+
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+        if (currentPage !== 1) setCurrentPage(1);
+        else fetchSchedules();
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  const fetchInitialData = async () => {
     try {
-      setLoading(true);
-      const [busRes, schedRes] = await Promise.allSettled([
-        operatorService.getAllBusesWithRoutes(operatorId),
-        operatorService.getSchedules(operatorId)
-      ]);
-      if (busRes.status === 'fulfilled') {
-        // Requirement: Filter to show only active buses
-        const activeBuses = busRes.value.data.filter(b => b.isActive);
-        setBuses(activeBuses);
-        
-        // Extract all unique routes
-        const routes = activeBuses.flatMap(bus => bus.routes || []);
-        const uniqueRoutes = Array.from(new Map(routes.map(r => [r.routeId, r])).values());
-        setAllOperatorRoutes(uniqueRoutes);
-      }
-      if (schedRes.status === 'fulfilled') setSchedules(schedRes.value.data);
+      const busRes = await operatorService.getAllBusesWithRoutes(operatorId);
+      // Requirement: Filter to show only active buses
+      const activeBuses = busRes.data.items ? busRes.data.items.filter(b => b.isActive) : (Array.isArray(busRes.data) ? busRes.data.filter(b => b.isActive) : []);
+      setBuses(activeBuses);
+      
+      // Extract all unique routes
+      const routes = activeBuses.flatMap(bus => bus.routes || []);
+      const uniqueRoutes = Array.from(new Map(routes.map(r => [r.routeId || r.RouteId, r])).values());
+      setAllOperatorRoutes(uniqueRoutes);
     } catch { }
-    finally { setLoading(false); }
   };
 
-  const handleBusChange = (busId) => {
+  const fetchSchedules = async () => {
+    try {
+      setLoading(true);
+      const res = await operatorService.getSchedules(operatorId, {
+          pageNumber: currentPage,
+          pageSize: pageSize,
+          searchTerm: searchTerm,
+          filterDate: filterDate || null
+      });
+      setSchedules(res.data.items || []);
+      setTotalCount(res.data.totalCount || 0);
+    } catch {
+      setSchedules([]);
+      setTotalCount(0);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBusChange = async (busId) => {
     setFormData({ ...formData, busId, routeId: '' });
     // Show all operator routes instead of just the bus-specific ones
     setAvailableRoutes(allOperatorRoutes);
+    
+    if (!busId) {
+      setSelectedBusConfigured(true);
+      return;
+    }
+    
+    try {
+      const res = await operatorService.getBusDetail(busId, operatorId);
+      const isConfigured = res.data.seats && res.data.seats.length > 0;
+      setSelectedBusConfigured(isConfigured);
+      if (!isConfigured) {
+        setError('Selected bus has NO seat configuration. Please configure seats before scheduling.');
+      } else {
+        setError('');
+      }
+    } catch {
+      setSelectedBusConfigured(false);
+    }
   };
 
   const addDate = () => {
@@ -100,7 +153,8 @@ const Schedule = () => {
       setFormData({ busId: '', routeId: '' });
       setSelectedDates([]);
       setAvailableRoutes([]);
-      fetchData();
+      fetchInitialData();
+      fetchSchedules();
     } catch (err) {
       if (err.response?.status === 409 && err.response?.data?.isInactiveConflict) {
         setConflictData(err.response.data);
@@ -142,7 +196,8 @@ const Schedule = () => {
       setShowReactivateModal(false);
       setFormData({ busId: '', routeId: '' });
       setSelectedDates([]);
-      fetchData();
+      fetchInitialData();
+      fetchSchedules();
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to reactivate schedule.');
       setShowReactivateModal(false);
@@ -183,6 +238,12 @@ const Schedule = () => {
                     <option key={bus.busId} value={bus.busId}>{bus.busName} ({bus.busNumber})</option>
                   ))}
                 </select>
+                {formData.busId && !selectedBusConfigured && (
+                  <div className="alert alert-warning py-2 px-3 mt-2 small border-0 shadow-sm d-flex align-items-center gap-2">
+                    <MdAdd size={18} className="text-warning" />
+                    <span>This bus has no seats! <button type="button" className="btn btn-link btn-sm p-0 fw-bold" onClick={() => navigate(`/operator/buses/${formData.busId}/config`)}>Configure now</button></span>
+                  </div>
+                )}
                 {buses.length === 0 && <small className="text-danger mt-1 d-block">No active buses found.</small>}
               </div>
 
@@ -217,7 +278,7 @@ const Schedule = () => {
                 </div>
               )}
 
-              <button type="submit" className="btn btn-primary w-100 rounded-pill py-3 mt-2 shadow" disabled={submitting}>
+              <button type="submit" className="btn btn-primary w-100 rounded-pill py-3 mt-2 shadow" disabled={submitting || !selectedBusConfigured}>
                 {submitting ? <span className="spinner-border spinner-border-sm me-2"></span> : <MdCheckCircle className="me-2" />}
                 Create Schedule ({selectedDates.length} date{selectedDates.length !== 1 ? 's' : ''})
               </button>
@@ -228,11 +289,34 @@ const Schedule = () => {
         {/* Scheduled Runs */}
         <div className="col-lg-7">
           <div className="tripzo-card border-top border-4 border-primary shadow-sm">
-            <h6 className="fw-bold mb-3 d-flex align-items-center gap-2 text-primary"><MdSchedule /> Scheduled Runs Overview</h6>
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <h6 className="fw-bold m-0 d-flex align-items-center gap-2 text-primary">
+                <MdSchedule /> Scheduled Runs
+              </h6>
+              <div className="d-flex gap-2">
+                  <div className="position-relative" style={{ width: '200px' }}>
+                      <MdSearch className="position-absolute top-50 translate-middle-y ms-2 text-muted" size={14} />
+                      <input 
+                          type="text" 
+                          className="form-control form-control-sm rounded-pill ps-4 border-0 bg-light" 
+                          placeholder="Route/Bus..." 
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                      />
+                  </div>
+                  <input 
+                      type="date" 
+                      className="form-control form-control-sm rounded-pill border-0 bg-light"
+                      value={filterDate}
+                      onChange={(e) => setFilterDate(e.target.value)}
+                  />
+              </div>
+            </div>
+
             {schedules.length === 0 ? (
               <div className="text-center py-5">
                 <MdSchedule size={48} className="text-muted" style={{ opacity: 0.3 }} />
-                <p className="text-muted m-0 mt-2">No schedules found.</p>
+                <p className="text-muted m-0 mt-2">No schedules found matching criteria.</p>
               </div>
             ) : (
               <div className="table-responsive">
@@ -272,6 +356,72 @@ const Schedule = () => {
                   </tbody>
                 </table>
               </div>
+            )}
+
+            {/* Pagination Controls */}
+            {totalCount > 0 && (
+                <div className="d-flex justify-content-between align-items-center mt-3 pt-3 border-top">
+                    <div className="d-flex align-items-center gap-2">
+                        <span className="text-muted small fw-bold text-uppercase" style={{ fontSize: '0.65rem' }}>Show:</span>
+                        <select 
+                            className="form-select form-select-sm bg-light border-0 shadow-none rounded-3" 
+                            style={{ width: 'auto', fontSize: '0.75rem' }}
+                            value={pageSize}
+                            onChange={(e) => {
+                                setPageSize(parseInt(e.target.value));
+                                setCurrentPage(1);
+                            }}
+                        >
+                            <option value="5">5</option>
+                            <option value="10">10</option>
+                            <option value="20">20</option>
+                            <option value="50">50</option>
+                        </select>
+                        <small className="text-muted" style={{ fontSize: '0.75rem' }}>
+                            {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, totalCount)} of {totalCount}
+                        </small>
+                    </div>
+                    
+                    <div className="d-flex gap-1">
+                        <button 
+                            className="btn btn-xs btn-outline-primary rounded-3 px-2 py-1" 
+                            disabled={currentPage === 1}
+                            onClick={() => setCurrentPage(prev => prev - 1)}
+                            style={{ fontSize: '0.75rem' }}
+                        >
+                            <MdChevronLeft /> Prev
+                        </button>
+                        {(() => {
+                            const totalPages = Math.ceil(totalCount / pageSize);
+                            return Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                                let page;
+                                if (totalPages <= 5) page = i + 1;
+                                else if (currentPage <= 3) page = i + 1;
+                                else if (currentPage >= totalPages - 2) page = totalPages - 4 + i;
+                                else page = currentPage - 2 + i;
+                                
+                                return (
+                                    <button
+                                        key={page}
+                                        className={`btn btn-xs rounded-3 fw-bold px-2 py-1 ${currentPage === page ? 'btn-primary shadow-sm' : 'btn-outline-primary border-0'}`}
+                                        onClick={() => setCurrentPage(page)}
+                                        style={{ fontSize: '0.75rem', minWidth: '28px' }}
+                                    >
+                                        {page}
+                                    </button>
+                                );
+                            });
+                        })()}
+                        <button 
+                            className="btn btn-xs btn-outline-primary rounded-3 px-2 py-1" 
+                            disabled={currentPage >= Math.ceil(totalCount / pageSize)}
+                            onClick={() => setCurrentPage(prev => prev + 1)}
+                            style={{ fontSize: '0.75rem' }}
+                        >
+                            Next <MdChevronRight />
+                        </button>
+                    </div>
+                </div>
             )}
           </div>
         </div>

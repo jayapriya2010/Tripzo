@@ -267,9 +267,9 @@ const Refunds = () => {
                           <p className="text-muted mb-0 fw-bold" style={{ fontSize: '0.7rem' }}>JOURNEY DATE</p>
                           <p className="fw-semibold m-0 small">{new Date(selectedBooking.journeyDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
                         </div>
-                        <div className="col-6">
+                        <div className="col-12">
                           <p className="text-muted mb-0 fw-bold" style={{ fontSize: '0.7rem' }}>EMAIL</p>
-                          <p className="fw-semibold m-0 small">{selectedBooking.passengerEmail}</p>
+                          <p className="fw-semibold m-0 small text-break">{selectedBooking.passengerEmail}</p>
                         </div>
                         {selectedBooking.cancellationReason && (
                           <div className="col-12">

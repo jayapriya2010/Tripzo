@@ -156,6 +156,7 @@ namespace Tripzo.Repositories
                 .Include(b => b.User)
                 .Include(b => b.Route)
                 .Include(b => b.BookedSeats)
+                    .ThenInclude(s => s.Seat)
                 .FirstOrDefaultAsync(b => b.BookingId == bookingId);
 
             if (booking == null)
@@ -197,7 +198,8 @@ namespace Tripzo.Repositories
                 PassengerName = booking.User?.FullName ?? "Passenger",
                 PassengerEmail = booking.User?.Email ?? "",
                 RouteName = $"{booking.Route?.SourceCity} to {booking.Route?.DestCity}",
-                Amount = (booking.TotalAmount / booking.BookedSeats.Count) * seatsToApprove.Count
+                Amount = (booking.TotalAmount / booking.BookedSeats.Count) * seatsToApprove.Count,
+                SeatNumbers = string.Join(", ", seatsToApprove.Select(s => s.Seat?.SeatNumber ?? "??"))
             };
         }
 
@@ -208,6 +210,7 @@ namespace Tripzo.Repositories
                 .Include(b => b.User)
                 .Include(b => b.Route)
                 .Include(b => b.BookedSeats)
+                    .ThenInclude(s => s.Seat)
                 .FirstOrDefaultAsync(b => b.BookingId == bookingId);
 
             if (booking == null)
@@ -251,7 +254,8 @@ namespace Tripzo.Repositories
                 PassengerEmail = booking.User?.Email ?? "",
                 RouteName = $"{booking.Route?.SourceCity} to {booking.Route?.DestCity}",
                 JourneyDate = booking.JourneyDate,
-                Amount = (booking.TotalAmount / booking.BookedSeats.Count) * seatsToRestore.Count
+                Amount = (booking.TotalAmount / booking.BookedSeats.Count) * seatsToRestore.Count,
+                SeatNumbers = string.Join(", ", seatsToRestore.Select(s => s.Seat?.SeatNumber ?? "??"))
             };
         }
 
@@ -400,6 +404,20 @@ namespace Tripzo.Repositories
         // 3. View every booking in the system for financial auditing
         public async Task<IEnumerable<Booking>> GetGlobalBookingHistoryAsync()
         {
+            // Auto-update past confirmed bookings to "Completed"
+            var pastConfirmed = await _context.Bookings
+                .Where(b => b.Status == "Confirmed" && b.JourneyDate.Date < DateTime.Today)
+                .ToListAsync();
+
+            if (pastConfirmed.Any())
+            {
+                foreach (var b in pastConfirmed)
+                {
+                    b.Status = "Completed";
+                }
+                await _context.SaveChangesAsync();
+            }
+
             return await _context.Bookings
                 .Include(b => b.User)
                 .Include(b => b.Route)

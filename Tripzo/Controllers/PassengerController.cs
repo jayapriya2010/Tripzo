@@ -280,7 +280,8 @@ namespace Tripzo.Controllers
                             request.PrimaryEmail,
                             ticketDetails.PassengerName,
                             pdfBytes,
-                            ticketDetails.BookingId);
+                            ticketDetails.BookingId,
+                            string.Join(", ", ticketDetails.SeatNumbers));
                     }
                 }
                 catch
@@ -309,21 +310,21 @@ namespace Tripzo.Controllers
             }
         }
 
-        // 4. History: Allows users to view past and manage current bookings
+        // 4. History: Allows users to view past and manage current bookings with pagination
         [HttpGet("history/{userId}")]
-        public async Task<ActionResult<IEnumerable<PassengerHistoryDTO>>> GetHistory(int userId)
+        public async Task<ActionResult<Tripzo.DTO.Admin.PagedResultDTO<PassengerHistoryDTO>>> GetHistory(int userId, [FromQuery] BookingFilterDTO filter)
         {
             // Validate: User ID must be positive
             if (userId <= 0)
                 return BadRequest(new { message = "User ID must be a positive number." });
 
-            var history = await _bookingRepo.GetPassengerHistoryAsync(userId);
+            var pagedResult = await _bookingRepo.GetPassengerHistoryAsync(userId, filter);
 
             // Return 404 if no bookings found
-            if (history == null || !history.Any())
+            if (pagedResult.Items == null || !pagedResult.Items.Any())
                 return NotFound(new { message = $"No booking history found for User ID {userId}." });
 
-            var historyDtos = history.Select(h => new PassengerHistoryDTO
+            var historyDtos = pagedResult.Items.Select(h => new PassengerHistoryDTO
             {
                 BookingId = h.BookingId,
                 RouteName = $"{h.Route?.SourceCity} to {h.Route?.DestCity}",
@@ -339,9 +340,15 @@ namespace Tripzo.Controllers
                     Status = s.Status,
                     CancellationReason = s.CancellationReason
                 }).ToList()
-            });
+            }).ToList();
 
-            return Ok(historyDtos);
+            return Ok(new Tripzo.DTO.Admin.PagedResultDTO<PassengerHistoryDTO>
+            {
+                Items = historyDtos,
+                TotalCount = pagedResult.TotalCount,
+                PageNumber = pagedResult.PageNumber,
+                PageSize = pagedResult.PageSize
+            });
         }
 
         // 5. Cancellation: Request refund for a booking
@@ -367,7 +374,8 @@ namespace Tripzo.Controllers
                         result.BookingId,
                         result.RouteName,
                         result.JourneyDate,
-                        result.Amount);
+                        result.Amount,
+                        result.SeatNumbers);
                 }
                 catch
                 {

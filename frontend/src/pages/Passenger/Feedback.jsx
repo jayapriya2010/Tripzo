@@ -35,7 +35,7 @@ const Feedback = () => {
   useEffect(() => {
     if (!user?.userId) { setLoadingData(false); return; }
     Promise.all([
-      passengerService.getHistory(user.userId).then(r => r.data || []).catch(() => []),
+      passengerService.getHistory(user.userId, { pageSize: 50 }).then(r => r.data.items || []).catch(() => []),
       passengerService.getUserFeedbacks(user.userId).then(r => r.data || []).catch(() => []),
     ]).then(([history, feedbacks]) => {
       // Only completed or confirmed bookings whose journey date has passed or is today
@@ -77,7 +77,7 @@ const Feedback = () => {
       setForm({ bookingId: '', rating: 0, comment: '' });
       // Refresh
       const [history, feedbacks] = await Promise.all([
-        passengerService.getHistory(user.userId).then(r => r.data || []),
+        passengerService.getHistory(user.userId, { pageSize: 50 }).then(r => r.data.items || []),
         passengerService.getUserFeedbacks(user.userId).then(r => r.data || []),
       ]);
       const today = new Date();

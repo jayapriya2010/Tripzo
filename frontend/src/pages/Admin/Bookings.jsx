@@ -66,6 +66,7 @@ const Bookings = () => {
     // Stats from ALL bookings (not filtered)
     const confirmedCount = allBookings.filter(b => b.status === 'Confirmed').length;
     const cancelledCount = allBookings.filter(b => b.status === 'Cancelled').length;
+    const partiallyCancelledCount = allBookings.filter(b => b.status === 'PartiallyCancelled').length;
     const approvedCount = allBookings.filter(b => b.status === 'CancellationApproved').length;
 
     const handleApproveCancellation = async (booking) => {
@@ -85,7 +86,8 @@ const Bookings = () => {
         const map = {
             'Confirmed': 'badge-success',
             'Cancelled': 'badge-inactive',
-            'CancellationApproved': 'badge-pending',
+            'PartiallyCancelled': 'badge-pending',
+            'CancellationApproved': 'badge-secondary',
         };
         return map[status] || 'badge-pending';
     };
@@ -101,14 +103,17 @@ const Bookings = () => {
 
             {/* Stats Cards */}
             <div className="row g-4 mb-4">
-                <div className="col-md-4">
+                <div className="col-md-3">
                     <StatsCard title="Confirmed" value={confirmedCount} icon={<MdBook size={28} />} color="#22C55E" />
                 </div>
-                <div className="col-md-4">
+                <div className="col-md-3">
+                    <StatsCard title="Partially Cancelled" value={partiallyCancelledCount} icon={<MdBook size={28} />} color="#F59E0B" />
+                </div>
+                <div className="col-md-3">
                     <StatsCard title="Cancelled" value={cancelledCount} icon={<MdBook size={28} />} color="#EF4444" />
                 </div>
-                <div className="col-md-4">
-                    <StatsCard title="Cancellation Approved" value={approvedCount} icon={<MdBook size={28} />} color="#F59E0B" />
+                <div className="col-md-3">
+                    <StatsCard title="Pending Refund" value={approvedCount} icon={<MdBook size={28} />} color="#64748B" />
                 </div>
             </div>
 
@@ -137,6 +142,7 @@ const Bookings = () => {
                             >
                                 <option value="">All Status</option>
                                 <option value="Confirmed">Confirmed</option>
+                                <option value="PartiallyCancelled">Partially Cancelled</option>
                                 <option value="Cancelled">Cancelled</option>
                                 <option value="CancellationApproved">Cancellation Approved</option>
                             </select>
@@ -190,7 +196,7 @@ const Bookings = () => {
                                     <td>₹{booking.totalAmount}</td>
                                     <td>
                                         <span className={`badge-status ${getStatusBadge(booking.status)}`}>
-                                            {booking.status}
+                                            {booking.status === 'CancellationApproved' ? 'Pending Refund' : booking.status}
                                         </span>
                                     </td>
                                     <td>
@@ -202,7 +208,8 @@ const Bookings = () => {
                                             >
                                                 <MdVisibility />
                                             </button>
-                                            {booking.status === 'Cancelled' && (
+                                            {(booking.status === 'Cancelled' || booking.status === 'PartiallyCancelled') && 
+                                              booking.bookedSeats?.some(s => s.status === 'CancellationPending') && (
                                                 <button
                                                     className="btn btn-sm btn-outline-success"
                                                     title="Approve Cancellation"

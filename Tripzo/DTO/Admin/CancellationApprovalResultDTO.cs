@@ -9,5 +9,6 @@ namespace Tripzo.DTOs.Admin
         public string PassengerEmail { get; set; } = string.Empty;
         public string RouteName { get; set; } = string.Empty;
         public decimal Amount { get; set; }
+        public string SeatNumbers { get; set; } = string.Empty;
     }
 }

@@ -8,7 +8,8 @@ namespace Tripzo.Repositories
     {
         // Fleet Management
         Task<int?> AddBusAsync(Bus bus);
-        Task<IEnumerable<Bus>> GetOperatorFleetAsync(int operatorId);
+        Task<PagedResultDTO<Bus>> GetOperatorFleetAsync(int operatorId, PaginationFilterDTO filter);
+        Task<PagedResultDTO<OperatorRouteDetailDTO>> GetOperatorRoutesAsync(int operatorId, PaginationFilterDTO filter);
         Task<bool> UpdateBusStatusAsync(int busId, bool status);
 
         // Amenity Management
@@ -31,7 +32,7 @@ namespace Tripzo.Repositories
 
         // Schedule Management
         Task<ScheduleCreationResultDTO> CreateBusSchedulesAsync(int routeId, int busId, List<DateTime> dates);
-        Task<List<BusSchedule>> GetSchedulesByOperatorAsync(int operatorId);
+        Task<PagedResultDTO<BusSchedule>> GetSchedulesByOperatorAsync(int operatorId, PaginationFilterDTO filter);
         Task<List<BusSchedule>> GetSchedulesByBusIdAsync(int busId, int operatorId);
         Task<bool> DeleteScheduleAsync(int scheduleId);
         Task<ScheduleDeactivationResultDTO> DeactivateScheduleWithCheckAsync(int scheduleId);
@@ -44,8 +45,8 @@ namespace Tripzo.Repositories
         Task<(bool success, string message)> RespondToFeedbackAsync(int operatorId, int feedbackId, string response);
 
         // Bus Information
-        Task<BusBookingStatusDTO?> GetBusBookingStatusAsync(int busId, int operatorId);
-        Task<List<OperatorBusListDTO>> GetAllBusesWithRoutesAsync(int operatorId);
+        Task<BusBookingStatusDTO?> GetBusBookingStatusAsync(int busId, int operatorId, PaginationFilterDTO filter);
+        Task<PagedResultDTO<OperatorBusListDTO>> GetAllBusesWithRoutesAsync(int operatorId, PaginationFilterDTO filter);
         Task<BusDetailDTO?> GetBusDetailAsync(int busId, int operatorId);
 
         Task<OperatorDashboardDTO> GetOperatorDashboardAsync(int operatorId);

@@ -28,15 +28,110 @@ namespace Tripzo.Repositories
             return saved ? bus.BusId : null;
         }
 
-        // 2. Fetch all buses for a specific Operator (including amenities)
-        public async Task<IEnumerable<Bus>> GetOperatorFleetAsync(int operatorId)
+        public async Task<PagedResultDTO<Bus>> GetOperatorFleetAsync(int operatorId, PaginationFilterDTO filter)
         {
-            return await _context.Buses
+            var query = _context.Buses
                 .Include(b => b.SeatConfigs)
                 .Include(b => b.BusAmenities)
                     .ThenInclude(ba => ba.Amenity)
-                .Where(b => b.OperatorId == operatorId)
+                .Where(b => b.OperatorId == operatorId);
+
+            // Filtering
+            if (!string.IsNullOrWhiteSpace(filter.SearchTerm))
+            {
+                var term = filter.SearchTerm.ToLower();
+                query = query.Where(b => b.BusName.ToLower().Contains(term) || b.BusNumber.ToLower().Contains(term));
+            }
+
+            if (!string.IsNullOrWhiteSpace(filter.Status))
+            {
+                bool isActive = filter.Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
+                query = query.Where(b => b.IsActive == targetStatus);
+            }
+
+            if (!string.IsNullOrWhiteSpace(filter.Category))
+            {
+                query = query.Where(b => b.BusType.Contains(filter.Category));
+            }
+
+            if (!string.IsNullOrWhiteSpace(filter.Type))
+            {
+                query = query.Where(b => b.BusType.Contains(filter.Type));
+            }
+
+            var totalCount = await query.CountAsync();
+            var pageNumber = Math.Max(1, filter.PageNumber);
+            var pageSize = Math.Clamp(filter.PageSize, 1, 50);
+
+            var items = await query
+                .OrderByDescending(b => b.BusId)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
+
+            return new PagedResultDTO<Bus>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                PageNumber = pageNumber,
+                PageSize = pageSize
+            };
+        }
+
+        public async Task<PagedResultDTO<OperatorRouteDetailDTO>> GetOperatorRoutesAsync(int operatorId, PaginationFilterDTO filter)
+        {
+            var query = _context.Routes
+                .Include(r => r.Bus)
+                .Include(r => r.RouteStops)
+                .Where(r => r.Bus.OperatorId == operatorId);
+
+            if (!string.IsNullOrWhiteSpace(filter.SearchTerm))
+            {
+                var term = filter.SearchTerm.ToLower();
+                query = query.Where(r => 
+                    r.SourceCity.ToLower().Contains(term) || 
+                    r.DestCity.ToLower().Contains(term) ||
+                    r.Bus.BusName.ToLower().Contains(term)
+                );
+            }
+
+            var totalCount = await query.CountAsync();
+            var pageNumber = Math.Max(1, filter.PageNumber);
+            var pageSize = Math.Clamp(filter.PageSize, 1, 50);
+
+            var items = await query
+                .OrderByDescending(r => r.RouteId)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            var routeDtos = items.Select(r => new OperatorRouteDetailDTO
+            {
+                RouteId = r.RouteId,
+                BusName = r.Bus?.BusName ?? "N/A",
+                BusNumber = r.Bus?.BusNumber ?? "N/A",
+                SourceCity = r.SourceCity,
+                DestCity = r.DestCity,
+                BaseFare = r.BaseFare,
+                ActiveBookingsCount = 0, // Simplified for the list view
+                Stops = r.RouteStops.Select(s => new RouteStopDetailsDTO
+                {
+                    StopId = s.StopId,
+                    CityName = s.CityName,
+                    LocationName = s.LocationName,
+                    StopType = s.StopType,
+                    StopOrder = s.StopOrder,
+                    ArrivalTime = s.ArrivalTime
+                }).OrderBy(s => s.StopOrder).ToList()
+            }).ToList();
+
+            return new PagedResultDTO<OperatorRouteDetailDTO>
+            {
+                Items = routeDtos,
+                TotalCount = totalCount,
+                PageNumber = pageNumber,
+                PageSize = pageSize
+            };
         }
 
         // 3. Toggle Bus Status (Soft Delete Logic)
@@ -236,6 +331,7 @@ namespace Tripzo.Repositories
                 .Include(b => b.Route)
                     .ThenInclude(r => r.Bus)
                 .Include(b => b.BookedSeats)
+                    .ThenInclude(s => s.Seat)
                 .Where(b => b.BookedSeats.Any(s => s.Status == "CancellationApproved") && b.Route.Bus.OperatorId == operatorId)
                 .OrderBy(b => b.BookingDate)
                 .ToListAsync();
@@ -253,6 +349,7 @@ namespace Tripzo.Repositories
                     .Include(b => b.User)
                     .Include(b => b.Route)
                     .Include(b => b.BookedSeats)
+                        .ThenInclude(s => s.Seat)
                     .FirstOrDefaultAsync(b => b.BookingId == bookingId);
 
                 // 2. Strict Validation
@@ -310,6 +407,11 @@ namespace Tripzo.Repositories
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
+                var remainingSeats = booking.BookedSeats
+                    .Where(s => s.Status == "Confirmed")
+                    .Select(s => s.Seat?.SeatNumber ?? "??")
+                    .ToList();
+
                 return new RefundResultDTO
                 {
                     Success = true,
@@ -319,7 +421,8 @@ namespace Tripzo.Repositories
                     PassengerEmail = booking.User?.Email ?? "",
                     RouteName = $"{booking.Route?.SourceCity} to {booking.Route?.DestCity}",
                     RefundAmount = amount,
-                    RazorpayPaymentId = booking.Payment.RazorpayPaymentId
+                    RazorpayPaymentId = booking.Payment.RazorpayPaymentId,
+                    SeatNumbers = string.Join(", ", remainingSeats)
                 };
             }
             catch (Exception)
@@ -416,14 +519,44 @@ namespace Tripzo.Repositories
             };
         }
 
-        public async Task<List<BusSchedule>> GetSchedulesByOperatorAsync(int operatorId)
+        public async Task<PagedResultDTO<BusSchedule>> GetSchedulesByOperatorAsync(int operatorId, PaginationFilterDTO filter)
         {
-            return await _context.BusSchedules
+            var query = _context.BusSchedules
                 .Include(bs => bs.Route)
                 .Include(bs => bs.Bus)
-                .Where(bs => bs.Bus.OperatorId == operatorId && bs.IsActive)
-                .OrderBy(bs => bs.ScheduledDate)
+                .Where(bs => bs.Bus.OperatorId == operatorId);
+
+            if (!string.IsNullOrWhiteSpace(filter.SearchTerm))
+            {
+                var term = filter.SearchTerm.ToLower();
+                query = query.Where(bs => 
+                    (bs.Route.SourceCity + " to " + bs.Route.DestCity).ToLower().Contains(term) ||
+                    bs.Bus.BusName.ToLower().Contains(term)
+                );
+            }
+
+            if (filter.FilterDate.HasValue)
+            {
+                query = query.Where(bs => bs.ScheduledDate.Date == filter.FilterDate.Value.Date);
+            }
+
+            var totalCount = await query.CountAsync();
+            var pageNumber = Math.Max(1, filter.PageNumber);
+            var pageSize = Math.Clamp(filter.PageSize, 1, 50);
+
+            var items = await query
+                .OrderByDescending(bs => bs.ScheduledDate)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
+
+            return new PagedResultDTO<BusSchedule>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                PageNumber = pageNumber,
+                PageSize = pageSize
+            };
         }
 
         public async Task<List<BusSchedule>> GetSchedulesByBusIdAsync(int busId, int operatorId)
@@ -730,7 +863,7 @@ namespace Tripzo.Repositories
         }
 
         // Bus Information Methods
-        public async Task<BusBookingStatusDTO?> GetBusBookingStatusAsync(int busId, int operatorId)
+        public async Task<BusBookingStatusDTO?> GetBusBookingStatusAsync(int busId, int operatorId, PaginationFilterDTO filter)
         {
             var bus = await _context.Buses
                 .Include(b => b.SeatConfigs)
@@ -738,10 +871,23 @@ namespace Tripzo.Repositories
 
             if (bus == null) return null;
 
-            var schedules = await _context.BusSchedules
+            var scheduleQuery = _context.BusSchedules
                 .Include(s => s.Route)
-                .Where(s => s.BusId == busId && s.IsActive)
+                .Where(s => s.BusId == busId && s.IsActive);
+
+            if (filter.FilterDate.HasValue)
+            {
+                scheduleQuery = scheduleQuery.Where(s => s.ScheduledDate.Date == filter.FilterDate.Value.Date);
+            }
+
+            var totalSchedules = await scheduleQuery.CountAsync();
+            var pageNumber = Math.Max(1, filter.PageNumber);
+            var pageSize = Math.Clamp(filter.PageSize, 1, 10);
+
+            var schedules = await scheduleQuery
                 .OrderBy(s => s.ScheduledDate)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
             var scheduleBookings = new List<ScheduleBookingStatusDTO>();
@@ -770,7 +916,7 @@ namespace Tripzo.Repositories
                     {
                         BookingId = b.BookingId,
                         PassengerName = s.PassengerName ?? b.User?.FullName ?? "Unknown",
-                        PassengerEmail = b.User?.Email ?? "N/A", // Account email
+                        PassengerEmail = b.User?.Email ?? "N/A",
                         PhoneNumber = s.PassengerPhone ?? b.User?.PhoneNumber,
                         Gender = s.Gender ?? b.User?.Gender,
                         SeatNumber = s.Seat?.SeatNumber ?? "??",
@@ -807,21 +953,46 @@ namespace Tripzo.Repositories
             };
         }
 
-        public async Task<List<OperatorBusListDTO>> GetAllBusesWithRoutesAsync(int operatorId)
+        public async Task<PagedResultDTO<OperatorBusListDTO>> GetAllBusesWithRoutesAsync(int operatorId, PaginationFilterDTO filter)
         {
-            var buses = await _context.Buses
+            var query = _context.Buses
                 .Include(b => b.BusAmenities)
                     .ThenInclude(ba => ba.Amenity)
                 .Include(b => b.Routes)
                     .ThenInclude(r => r.RouteStops)
-                .Where(b => b.OperatorId == operatorId)
+                .Where(b => b.OperatorId == operatorId);
+
+            if (!string.IsNullOrWhiteSpace(filter.SearchTerm))
+            {
+                var term = filter.SearchTerm.ToLower();
+                query = query.Where(b => 
+                    b.BusName.ToLower().Contains(term) || 
+                    b.BusNumber.ToLower().Contains(term) ||
+                    b.Routes.Any(r => r.SourceCity.ToLower().Contains(term) || r.DestCity.ToLower().Contains(term))
+                );
+            }
+
+            if (!string.IsNullOrWhiteSpace(filter.Status))
+            {
+                bool isActive = filter.Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
+                query = query.Where(b => b.IsActive == targetStatus);
+            }
+
+            var totalCount = await query.CountAsync();
+            var pageNumber = Math.Max(1, filter.PageNumber);
+            var pageSize = Math.Clamp(filter.PageSize, 1, 50);
+
+            var items = await query
+                .OrderByDescending(b => b.BusId)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
             var feedbacks = await _context.Feedbacks
                 .Where(f => f.Bus.OperatorId == operatorId)
                 .ToListAsync();
 
-            return buses.Select(b => {
+            var busDtos = items.Select(b => {
                 var busFeedbacks = feedbacks.Where(f => f.BusId == b.BusId).ToList();
                 return new OperatorBusListDTO
                 {
@@ -844,6 +1015,14 @@ namespace Tripzo.Repositories
                     }).ToList() ?? new List<BusRouteDTO>()
                 };
             }).ToList();
+
+            return new PagedResultDTO<OperatorBusListDTO>
+            {
+                Items = busDtos,
+                TotalCount = totalCount,
+                PageNumber = pageNumber,
+                PageSize = pageSize
+            };
         }
 
         public async Task<BusDetailDTO?> GetBusDetailAsync(int busId, int operatorId)

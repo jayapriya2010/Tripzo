@@ -8,8 +8,8 @@ const passengerService = {
   getSeats: (busId, routeId, travelDate) =>
     api.get('/Passenger/seats', { params: { busId, routeId, travelDate } }),
 
-  // Booking history
-  getHistory: (userId) => api.get(`/Passenger/history/${userId}`),
+  // Booking history with pagination, search, and sort
+  getHistory: (userId, params) => api.get(`/Passenger/history/${userId}`, { params }),
 
   // Create Razorpay order
   createOrder: (payload) => api.post('/Passenger/create-order', payload),

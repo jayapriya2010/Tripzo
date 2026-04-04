@@ -27,7 +27,7 @@ namespace Tripzo.Repositories
         Task<Booking> CreateBookingWithRazorpayAsync(Booking booking, int busId, List<PassengerDetailDTO> passengers, string razorpayOrderId, string razorpayPaymentId);
 
         // Passenger history
-        Task<IEnumerable<Booking>> GetPassengerHistoryAsync(int userId);
+        Task<Tripzo.DTO.Admin.PagedResultDTO<Booking>> GetPassengerHistoryAsync(int userId, BookingFilterDTO filter);
 
         // Cancel a booking (with refund logic placeholder)
         Task<CancellationResultDTO> CancelBookingAsync(int bookingId, int userId, string? reason, List<int>? selectedSeatIds = null);
