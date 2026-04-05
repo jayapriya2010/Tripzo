@@ -46,7 +46,7 @@ namespace Tripzo.Repositories
             if (!string.IsNullOrWhiteSpace(filter.Status))
             {
                 bool isActive = filter.Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
-                query = query.Where(b => b.IsActive == targetStatus);
+                query = query.Where(b => b.IsActive == isActive);
             }
 
             if (!string.IsNullOrWhiteSpace(filter.Category))
@@ -975,7 +975,7 @@ namespace Tripzo.Repositories
             if (!string.IsNullOrWhiteSpace(filter.Status))
             {
                 bool isActive = filter.Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
-                query = query.Where(b => b.IsActive == targetStatus);
+                query = query.Where(b => b.IsActive == isActive);
             }
 
             var totalCount = await query.CountAsync();
@@ -1149,10 +1149,16 @@ namespace Tripzo.Repositories
 
             if (route == null) return null;
 
-            // Count active bookings for this specific route
-            // Active = Confirmed status and Journey date is today or later
-            var activeBookings = await _context.Bookings
-                .Where(b => b.RouteId == routeId && b.Status == "Confirmed" && b.JourneyDate.Date >= DateTime.Today)
+            // Count active confirmed seats for this route:
+            // - Fully confirmed bookings (Status == "Confirmed")
+            // - Partially cancelled bookings that still have some confirmed seats (Status == "PartiallyCancelled")
+            // We count at the seat level so each confirmed seat (not each booking) is counted.
+            var activeBookings = await _context.BookedSeats
+                .Where(bs =>
+                    bs.Booking.RouteId == routeId &&
+                    bs.Booking.JourneyDate.Date >= DateTime.Today &&
+                    (bs.Booking.Status == "Confirmed" || bs.Booking.Status == "PartiallyCancelled") &&
+                    bs.Status == "Confirmed")
                 .CountAsync();
 
             return new OperatorRouteDetailDTO

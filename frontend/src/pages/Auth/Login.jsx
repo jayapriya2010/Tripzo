@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import authService from '../../services/auth/authService';
-import { MdDirectionsBus, MdEmail, MdLock } from 'react-icons/md';
+import { MdEmail, MdLock } from 'react-icons/md';
+import Logo from '../../components/common/Logo';
 
 const Login = () => {
   const [formData, setFormData] = useState({
@@ -45,7 +46,9 @@ const Login = () => {
         <div className="row g-0">
           <div className="col-12 p-5 bg-white">
             <div className="text-center mb-4">
-              <MdDirectionsBus size={48} className="text-primary mb-2" />
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
+                <Logo size={72} />
+              </div>
               <h3 className="fw-bold">Welcome Back</h3>
               <p className="text-muted">Sign in to your account</p>
             </div>

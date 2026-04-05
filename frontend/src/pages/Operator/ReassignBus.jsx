@@ -31,8 +31,8 @@ const ReassignBus = () => {
           operatorService.getSchedules(operatorId)
         ]);
 
-        const allBuses = fleetRes.data;
-        const allSchedules = schedRes.data;
+        const allBuses = fleetRes.data.items || (Array.isArray(fleetRes.data) ? fleetRes.data : []);
+        const allSchedules = schedRes.data.items || (Array.isArray(schedRes.data) ? schedRes.data : []);
 
         // 1. Identify current bus details
         const currentBus = allBuses.find(b => b.busId === currentBusId);

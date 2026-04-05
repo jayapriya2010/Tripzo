@@ -24,17 +24,17 @@ const OperatorFeedbacks = () => {
       setLoading(true);
       const res = await operatorService.getFeedbacks(operatorId);
       setFeedbacks(res.data);
-    } catch { 
-      setFeedbacks([]); 
-    } finally { 
-      setLoading(false); 
+    } catch {
+      setFeedbacks([]);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleRespond = async (e) => {
     e.preventDefault();
     if (!responseText.trim()) return;
-    
+
     setSubmittingResponse(true);
     setError('');
     setSuccess('');

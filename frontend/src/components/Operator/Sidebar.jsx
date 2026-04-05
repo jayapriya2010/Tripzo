@@ -6,11 +6,11 @@ import {
   MdRoute,
   MdSchedule,
   MdMoneyOff,
-  MdDirectionsBusFilled,
   MdBook,
   MdFeedback
 } from 'react-icons/md';
 import '../../styles/theme.css';
+import Logo from '../common/Logo';
 
 const OperatorSidebar = () => {
   const menuItems = [
@@ -26,7 +26,7 @@ const OperatorSidebar = () => {
   return (
     <div className="sidebar sidebar-operator">
       <div className="text-center mb-4 d-flex align-items-center justify-content-center gap-2">
-        <MdDirectionsBusFilled size={32} color="var(--primary-blue)" />
+        <Logo size={38} />
         <h4 className="m-0 fw-bold" style={{ letterSpacing: '1px' }}>Tripzo</h4>
       </div>
       <p className="text-center m-0 mb-2" style={{ fontSize: '0.65rem', letterSpacing: '2px', opacity: 0.5 }}>OPERATOR PANEL</p>
@@ -50,3 +50,4 @@ const OperatorSidebar = () => {
 };
 
 export default OperatorSidebar;
+

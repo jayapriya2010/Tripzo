@@ -1,5 +1,6 @@
 import React from 'react';
 import './Sidebar.css';
+import Logo from '../common/Logo';
 
 
 const Sidebar = ({ children }) => (
@@ -7,11 +8,11 @@ const Sidebar = ({ children }) => (
     <aside className="sidebar">
       <div>
         <div className="sidebar-logo-section">
-          <div className="sidebar-logo-icon">
-            <span className="material-symbols-outlined" style={{ color: '#fff', fontSize: '20px' }}>directions_bus</span>
+          <div className="sidebar-logo-icon" style={{ background: 'transparent' }}>
+            <Logo size={40} />
           </div>
           <div>
-            <div className="sidebar-logo-text">Tripzo</div>
+            <div className="sidebar-logo-text" style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--primary-blue)' }}>Tripzo</div>
             <div className="sidebar-operator">OPERATOR</div>
           </div>
         </div>

@@ -7,7 +7,7 @@ import authService from '../../services/auth/authService';
 const AddRoute = () => {
   const navigate = useNavigate();
   const user = authService.getCurrentUser();
-  const operatorId = user?.userId;
+  const operatorId = user?.userId || user?.UserId;
 
   const [fleet, setFleet] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -33,7 +33,8 @@ const AddRoute = () => {
       try {
         const res = await operatorService.getFleet(operatorId);
         // Requirement: Filter to show only active buses
-        setFleet(res.data.filter(bus => bus.isActive));
+        const items = res.data.items || (Array.isArray(res.data) ? res.data : []);
+        setFleet(items.filter(bus => bus.isActive));
       } catch { setFleet([]); }
       finally { setLoading(false); }
     };

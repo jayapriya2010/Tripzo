@@ -6,10 +6,10 @@ import {
   MdRoute, 
   MdBook, 
   MdCancel,
-  MdDirectionsBus,
   MdWifi
 } from 'react-icons/md';
 import '../../styles/theme.css';
+import Logo from '../common/Logo';
 
 const Sidebar = () => {
   const menuItems = [
@@ -24,7 +24,7 @@ const Sidebar = () => {
   return (
     <div className="sidebar">
       <div className="text-center mb-4 d-flex align-items-center justify-content-center gap-2">
-        <MdDirectionsBus size={32} color="#1E63FF" />
+        <Logo size={40} />
         <h4 className="m-0 fw-bold" style={{ letterSpacing: '1px' }}>Tripzo</h4>
       </div>
       <hr style={{ backgroundColor: 'rgba(255,255,255,0.1)' }} />
@@ -47,3 +47,4 @@ const Sidebar = () => {
 };
 
 export default Sidebar;
+

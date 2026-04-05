@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MdNotifications, MdAccountCircle, MdLogout, MdSearch } from 'react-icons/md';
 import authService from '../../services/auth/authService';
+import Logo from '../common/Logo';
 
 const PassengerNavbar = () => {
   const user = authService.getCurrentUser();
@@ -14,7 +15,8 @@ const PassengerNavbar = () => {
 
   return (
     <div className="navbar-top">
-      <div>
+      <div className="d-flex align-items-center gap-2">
+        <Logo size={28} />
         <span className="fw-bold text-muted" style={{ fontSize: '0.85rem', letterSpacing: '1px' }}>
           PASSENGER PANEL
         </span>

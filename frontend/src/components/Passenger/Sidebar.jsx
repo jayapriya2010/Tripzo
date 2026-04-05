@@ -5,10 +5,10 @@ import {
   MdSearch,
   MdConfirmationNumber,
   MdAccountCircle,
-  MdFeedback,
-  MdDirectionsBusFilled
+  MdFeedback
 } from 'react-icons/md';
 import '../../styles/theme.css';
+import Logo from '../common/Logo';
 
 const PassengerSidebar = () => {
   const menuItems = [
@@ -22,7 +22,7 @@ const PassengerSidebar = () => {
   return (
     <div className="sidebar sidebar-operator">
       <div className="text-center mb-4 d-flex align-items-center justify-content-center gap-2">
-        <MdDirectionsBusFilled size={32} color="var(--primary-blue)" />
+        <Logo size={40} />
         <h4 className="m-0 fw-bold" style={{ letterSpacing: '1px' }}>Tripzo</h4>
       </div>
       <p className="text-center m-0 mb-2" style={{ fontSize: '0.65rem', letterSpacing: '2px', opacity: 0.5 }}>PASSENGER PANEL</p>
@@ -46,3 +46,4 @@ const PassengerSidebar = () => {
 };
 
 export default PassengerSidebar;
+

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { MdNotifications, MdAccountCircle, MdLogout } from 'react-icons/md';
 import authService from '../../services/auth/authService';
+import Logo from '../common/Logo';
 
 const OperatorNavbar = () => {
   const user = authService.getCurrentUser();
@@ -12,7 +13,8 @@ const OperatorNavbar = () => {
 
   return (
     <div className="navbar-top">
-      <div>
+      <div className="d-flex align-items-center gap-2">
+        <Logo size={28} />
         <span className="fw-bold text-muted" style={{ fontSize: '0.85rem', letterSpacing: '1px' }}>
           OPERATOR PANEL
         </span>

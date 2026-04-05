@@ -25,7 +25,7 @@ const OperatorDashboard = () => {
         operatorService.getFleet(operatorId)
       ]);
       if (dashRes.status === 'fulfilled') setStats(dashRes.value.data);
-      if (fleetRes.status === 'fulfilled') setFleet(fleetRes.value.data);
+      if (fleetRes.status === 'fulfilled') setFleet(fleetRes.value.data.items || []);
     } catch (err) {
       setError('Failed to load dashboard data.');
     } finally {
